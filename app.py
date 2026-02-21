@@ -4,6 +4,7 @@ from PIL import Image
 import tempfile
 import os
 import math
+import json
 
 # --- FUNCIÓN PARA EVITAR CRASHEOS CON EMOJIS ---
 def limpiar_texto(texto):
@@ -12,19 +13,48 @@ def limpiar_texto(texto):
 
 # --- ESTIMADOR DE ALTURA DINÁMICA ---
 def estimar_altura_texto(texto, limite_caracteres=45):
-    """Calcula cuántas líneas ocupará un texto para ajustar la caja."""
     if not texto: return 0
     lineas = 0
     for parrafo in texto.split('\n'):
         lineas += 1 + (len(parrafo) // limite_caracteres)
-    return lineas * 3.5 # 3.5 es el alto de cada línea en FPDF
+    return lineas * 3.5 
+
+# --- FUNCIONES DE GUARDADO Y RESPALDO ---
+BACKUP_FILE = "backup_progreso.json"
+
+def guardar_progreso_local():
+    """Guarda todas las variables de texto y números en un archivo local"""
+    estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
+    with open(BACKUP_FILE, "w", encoding="utf-8") as f:
+        json.dump(estado_limpio, f, ensure_ascii=False, indent=4)
+
+def cargar_progreso_local():
+    """Recupera las variables del archivo local y recarga la página"""
+    if os.path.exists(BACKUP_FILE):
+        with open(BACKUP_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            for k, v in data.items():
+                st.session_state[k] = v
+        st.rerun()
+
+def generar_json_descarga():
+    """Genera un JSON para descargar (Plantillas)"""
+    estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
+    return json.dumps(estado_limpio, ensure_ascii=False, indent=4)
+
+def cargar_desde_archivo(uploaded_file):
+    """Carga datos desde un archivo JSON subido"""
+    if uploaded_file is not None:
+        data = json.load(uploaded_file)
+        for k, v in data.items():
+            st.session_state[k] = v
+        st.rerun()
 
 # --- MOTOR PDF OPTIMIZADO ---
 def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, inc_entreno, inc_nutri, inc_consejos):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=False) 
     
-    # Configuración de Colores según Estilo
     if estilo == "Dark Elite":
         c_bg, c_texto, c_acento, c_caja = (25, 25, 25), (255, 255, 255), (220, 20, 60), (40, 40, 40)
     elif estilo == "Clean Minimal":
@@ -36,7 +66,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     else: # Urban Power
         c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (244, 196, 48), (240, 240, 240)
 
-    # Función para dibujar el fondo y cabecera en páginas nuevas
     def dibujar_fondo_y_cabecera(titulo_pagina):
         pdf.add_page()
         if estilo in ["Dark Elite", "Cyber Neon"]:
@@ -87,7 +116,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 6, limpiar_texto(config['redes']), align='C')
 
-    # Función para dibujar los bloques de días (Entreno o Nutrición)
     def procesar_modulo(titulo_pagina, datos_dict, tipo_modulo):
         y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
         dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -96,7 +124,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             items = datos_dict.get(dia, [])
             if not any(item['nombre'] for item in items): continue 
             
-            # 1. Calcular altura dinámica necesaria
             alturas_col_izq = []
             alturas_col_der = []
             
@@ -115,12 +142,10 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             alto_der = sum(alturas_col_der) + (len(alturas_col_der) * 4)
             altura_caja = max(20, alto_izq, alto_der) + 5 
             
-            # 2. Salto de página automático si no cabe
             if y_offset + altura_caja > 265:
                 dibujar_pie_pagina()
                 y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
             
-            # 3. Dibujar las cajas
             if estilo == "Clean Minimal":
                 pdf.set_draw_color(0, 0, 0)
                 pdf.rect(15, y_offset, 40, altura_caja, 'D') 
@@ -131,13 +156,11 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 pdf.set_fill_color(*c_caja)
                 pdf.rect(60, y_offset, 135, altura_caja, 'F')
 
-            # 4. Título del Día
             pdf.set_xy(15, y_offset + (altura_caja/2) - 2.5)
             pdf.set_font("Arial", 'B', 11)
             pdf.set_text_color(0,0,0) if estilo in ["Urban Power", "Cyber Neon"] else pdf.set_text_color(*c_texto)
             pdf.cell(40, 5, dia.upper(), align='C')
 
-            # 5. Imprimir Contenido
             pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
             
             y_col_izq = y_offset + 3
@@ -180,13 +203,10 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         
         dibujar_pie_pagina()
 
-    # --- LÓGICA DE MÓDULOS A INCLUIR ---
     if inc_entreno:
         procesar_modulo("PLAN DE ENTRENAMIENTO", datos_rutina, "entreno")
-    
     if inc_nutri:
         procesar_modulo("PLAN DE ALIMENTACIÓN", datos_nutricion, "nutri")
-
     if inc_consejos and consejos.strip():
         y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES") + 10
         if estilo == "Clean Minimal":
@@ -201,7 +221,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
         pdf.multi_cell(170, 6, limpiar_texto(consejos))
         dibujar_pie_pagina()
-
     if not inc_entreno and not inc_nutri and not inc_consejos:
         dibujar_fondo_y_cabecera("DOCUMENTO VACÍO")
         pdf.set_xy(15, 100)
@@ -213,7 +232,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 # --- INTERFAZ DE USUARIO ---
 st.set_page_config(page_title="Coach System Pro", layout="wide")
 
-# --- DICCIONARIO PARA LA VISTA PREVIA VISUAL ---
 preview_styles = {
     "Urban Power": {"bg": "#ffffff", "text": "#000000", "accent": "#f4c430", "box": "#f0f0f0", "border": "none"},
     "Clean Minimal": {"bg": "#ffffff", "text": "#000000", "accent": "#ffffff", "box": "#ffffff", "border": "1px solid #000000"},
@@ -222,21 +240,46 @@ preview_styles = {
     "Cyber Neon": {"bg": "#0f0f0f", "text": "#ffffff", "accent": "#39ff14", "box": "#232323", "border": "none"}
 }
 
-# PANEL LATERAL: Configuración y Logo
+# --- PANEL LATERAL ---
 with st.sidebar:
+    # 1. SECCIÓN DE SEGURIDAD Y RESPALDOS
+    st.header("💾 Seguridad y Respaldos")
+    col_g1, col_g2 = st.columns(2)
+    if col_g1.button("💾 Guardar Local", help="Guarda el progreso en tu PC para no perderlo."):
+        guardar_progreso_local()
+        st.success("¡Guardado!")
+    if col_g2.button("📂 Cargar Local", help="Recupera el último guardado tras un corte de luz."):
+        cargar_progreso_local()
+        
+    archivo_subido = st.file_uploader("Subir Plantilla (JSON)", type=['json'])
+    if archivo_subido is not None:
+        if st.button("Aplicar Plantilla"):
+            cargar_desde_archivo(archivo_subido)
+            
+    st.download_button(
+        label="📥 Descargar como Plantilla (JSON)",
+        data=generar_json_descarga(),
+        file_name="Plantilla_Progreso.json",
+        mime="application/json"
+    )
+
+    st.divider()
+
+    # 2. SECCIÓN DE MARCA
     st.header("⚙️ Tu Marca (Logo)")
     logo_subido = st.file_uploader("Sube tu Logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
-    entrenador = st.text_input("Nombre del Entrenador", "TU NOMBRE O MARCA")
-    redes = st.text_input("Redes Sociales", "@tu_instagram")
-    fecha_in = st.text_input("Fecha Inicio", "01/02/2026")
-    fecha_out = st.text_input("Fecha Fin", "28/02/2026")
+    entrenador = st.text_input("Nombre del Entrenador", "TU NOMBRE O MARCA", key="k_entrenador")
+    redes = st.text_input("Redes Sociales", "@tu_instagram", key="k_redes")
+    fecha_in = st.text_input("Fecha Inicio", "01/02/2026", key="k_fecha_in")
+    fecha_out = st.text_input("Fecha Fin", "28/02/2026", key="k_fecha_out")
     
     st.divider()
+
+    # 3. SECCIÓN DE ESTILOS
     st.header("🎨 Selección de Plantilla")
     opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon"]
-    estilo_elegido = st.radio("Elige tu diseño:", opciones_estilos)
+    estilo_elegido = st.radio("Elige tu diseño:", opciones_estilos, key="k_estilo")
 
-    # --- RENDERIZADO DE VISTA PREVIA ---
     st.write("**Vista Previa del Diseño:**")
     estilo_css = preview_styles[estilo_elegido]
     color_texto_dia = "#000" if estilo_elegido in ["Urban Power", "Cyber Neon"] else estilo_css["text"]
@@ -258,21 +301,21 @@ with st.sidebar:
 
 st.title("🏋️‍♂️ Sistema de Planes Personalizados")
 
-# Pestaña de Usuario
+# --- DATOS DEL USUARIO ---
 st.subheader("👤 Datos del Usuario")
 c1, c2, c3, c4 = st.columns(4)
-c_nombre = c1.text_input("Usuario", "")
-c_edad = c2.text_input("Edad", "")
-c_peso = c3.text_input("Peso", "")
-c_altura = c4.text_input("Altura", "")
+c_nombre = c1.text_input("Usuario", "", key="c_nombre")
+c_edad = c2.text_input("Edad", "", key="c_edad")
+c_peso = c3.text_input("Peso", "", key="c_peso")
+c_altura = c4.text_input("Altura", "", key="c_altura")
 
 st.divider()
 
 dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-# PESTAÑAS PARA SEPARAR EL TRABAJO
-tab1, tab2, tab3 = st.tabs(["🔥 Módulo de Entrenamiento", "🍎 Módulo de Nutrición", "💡 Consejos"])
+tab1, tab2, tab3 = st.tabs(["🔥 Entrenamiento", "🍎 Nutrición", "💡 Consejos"])
 
+# --- TAB 1: ENTRENAMIENTO ---
 with tab1:
     datos_rutina = {}
     for dia in dias_semana:
@@ -289,6 +332,7 @@ with tab1:
                 lista_ej.append({"nombre": nombre, "s": s, "r": r, "seg": seg, "peso (kg)": p})
             datos_rutina[dia] = lista_ej
 
+# --- TAB 2: NUTRICIÓN ---
 with tab2:
     datos_nutricion = {}
     for dia in dias_semana:
@@ -297,28 +341,29 @@ with tab2:
             lista_comidas = []
             for i in range(n_comidas):
                 col1, col2 = st.columns([1, 3])
-                tipo = col1.text_input("Comida (Ej: Desayuno, Snack...)", key=f"t_{dia}_{i}")
-                detalle = col2.text_input("Alimentos (Ej: 2 huevos, 1 pan...)", key=f"d_{dia}_{i}")
+                tipo = col1.text_input("Comida (Ej: Desayuno...)", key=f"t_{dia}_{i}")
+                detalle = col2.text_input("Alimentos (Ej: 2 huevos...)", key=f"d_{dia}_{i}")
                 lista_comidas.append({"nombre": tipo, "detalle": detalle})
             datos_nutricion[dia] = lista_comidas
 
+# --- TAB 3: CONSEJOS ---
 with tab3:
     st.info("Escribe aquí todas las indicaciones extra: cantidad de agua, descanso, uso de suplementos, etc.")
-    texto_consejos = st.text_area("Consejos y Recomendaciones:", height=250)
+    texto_consejos = st.text_area("Consejos y Recomendaciones:", height=250, key="k_consejos")
 
 st.divider()
 
-# --- SECCIÓN: OPCIONES DE GENERACIÓN ---
+# --- OPCIONES DE GENERACIÓN ---
 st.subheader("⚙️ Opciones de Generación")
 st.write("Selecciona qué módulos quieres incluir en el PDF final:")
 col_opt1, col_opt2, col_opt3 = st.columns(3)
-inc_entreno = col_opt1.checkbox("💪 Módulo de Entrenamiento", value=True)
-inc_nutri = col_opt2.checkbox("🥗 Módulo de Nutrición", value=True)
-inc_consejos = col_opt3.checkbox("💡 Consejos y Recomendaciones", value=True)
+inc_entreno = col_opt1.checkbox("💪 Módulo de Entrenamiento", value=True, key="k_inc_entreno")
+inc_nutri = col_opt2.checkbox("🥗 Módulo de Nutrición", value=True, key="k_inc_nutri")
+inc_consejos = col_opt3.checkbox("💡 Consejos y Recomendaciones", value=True, key="k_inc_consejos")
 
 st.markdown("<br>", unsafe_allow_html=True) 
 
-# BOTÓN DE GENERACIÓN
+# --- BOTÓN DE GENERACIÓN PDF ---
 if st.button("🚀 GENERAR PDF PROFESIONAL", use_container_width=True):
     if not (inc_entreno or inc_nutri or inc_consejos):
         st.error("⚠️ Debes seleccionar al menos un módulo para generar el PDF.")
