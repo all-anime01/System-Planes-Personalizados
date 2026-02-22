@@ -48,35 +48,57 @@ def cargar_desde_archivo(uploaded_file):
             st.session_state[k] = v
         st.rerun()
 
+# --- MAPEO DE IMÁGENES DE FONDO (Deben estar en la misma carpeta que app.py) ---
+BG_IMAGES = {
+    "Urban Power": "bg_urban.jpg",
+    "Dark Elite": "bg_dark.jpg",
+    "Ocean Fitness": "bg_ocean.jpg",
+    "Cyber Neon": "bg_cyber.jpg",
+    "Eco Wellness": "bg_eco.jpg",
+    "Clean Minimal": None # Este estilo no lleva fondo
+}
+
 # --- MOTOR PDF OPTIMIZADO ---
 def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, inc_entreno, inc_nutri, inc_consejos):
     orientacion = 'L' if formato == "Horizontal (Tabla 7 Días)" else 'P'
     pdf = FPDF(orientation=orientacion)
     pdf.set_auto_page_break(auto=False) 
     
-    # Configuración de Colores
+    # Obtener nombre de la imagen de fondo
+    bg_image_file = BG_IMAGES.get(estilo)
+
+    # Configuración de Colores (Ajustados para buen contraste con fondos)
     if estilo == "Dark Elite":
-        c_bg, c_texto, c_acento, c_caja = (25, 25, 25), (255, 255, 255), (220, 20, 60), (40, 40, 40)
+        c_bg, c_texto, c_acento, c_caja = (20, 20, 20), (240, 240, 240), (200, 10, 50), (40, 40, 40)
     elif estilo == "Clean Minimal":
-        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (255, 255, 255), (255, 255, 255)
+        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (0, 0, 0), (255, 255, 255)
     elif estilo == "Ocean Fitness":
-        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (0, 105, 180), (230, 240, 250)
+        c_bg, c_texto, c_acento, c_caja = (240, 248, 255), (0, 20, 40), (0, 105, 180), (225, 240, 250)
     elif estilo == "Cyber Neon":
-        c_bg, c_texto, c_acento, c_caja = (15, 15, 15), (255, 255, 255), (57, 255, 20), (35, 35, 35)
+        c_bg, c_texto, c_acento, c_caja = (10, 10, 15), (240, 255, 240), (57, 255, 20), (25, 25, 35)
     elif estilo == "Eco Wellness": 
-        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (50, 50, 50), (130, 200, 80), (245, 250, 245)
+        c_bg, c_texto, c_acento, c_caja = (248, 253, 248), (40, 60, 40), (100, 180, 60), (240, 250, 240)
     else: # Urban Power
-        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (244, 196, 48), (240, 240, 240)
+        c_bg, c_texto, c_acento, c_caja = (255, 245, 200), (20, 20, 20), (255, 204, 0), (255, 255, 240)
 
     def obtener_ancho_caja():
         return pdf.w - 30
 
     def dibujar_fondo_y_cabecera(titulo_pagina):
         pdf.add_page()
-        if estilo in ["Dark Elite", "Cyber Neon"]:
-            pdf.set_fill_color(*c_bg)
-            pdf.rect(0, 0, pdf.w, pdf.h, 'F')
+
+        # 1. DIBUJAR IMAGEN DE FONDO (Si existe el archivo)
+        if bg_image_file and os.path.exists(bg_image_file):
+            # Se dibuja desde la esquina (0,0) ocupando todo el ancho y alto
+            pdf.image(bg_image_file, x=0, y=0, w=pdf.w, h=pdf.h)
+        else:
+            # 2. FALLBACK: Color sólido si no hay imagen o no se encuentra
+            # Solo dibujamos si no es blanco puro para ahorrar recursos
+            if c_bg != (255, 255, 255):
+                pdf.set_fill_color(*c_bg)
+                pdf.rect(0, 0, pdf.w, pdf.h, 'F')
             
+        # Logo
         if logo_file is not None:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
                 tmp_file.write(logo_file.getvalue())
@@ -84,6 +106,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             pdf.image(logo_path, x=15, y=10, w=25)
             os.remove(logo_path)
 
+        # Textos de cabecera
         pdf.set_text_color(*c_texto)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 10, limpiar_texto(config['entrenador']).upper(), ln=True, align='C')
@@ -96,16 +119,23 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         caja_w = obtener_ancho_caja()
         y_cliente = pdf.get_y()
         
+        # Caja de cliente (Ajustada para transparencia si hay fondo)
         if estilo == "Clean Minimal":
             pdf.set_draw_color(0, 0, 0)
             pdf.rect(15, y_cliente, caja_w, 8, 'D')
+            pdf.set_text_color(50, 50, 50)
+        elif estilo == "Urban Power":
+             pdf.set_fill_color(255, 255, 255) # Caja blanca para contraste en Urban
+             pdf.rect(15, y_cliente, caja_w, 8, 'F')
+             pdf.set_text_color(0, 0, 0)
         else:
-            pdf.set_fill_color(230,230,230) if estilo == "Urban Power" else pdf.set_fill_color(*c_caja)
+            pdf.set_fill_color(*c_caja)
             pdf.rect(15, y_cliente, caja_w, 8, 'F')
+            # Color de texto del cliente según el fondo
+            pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(80,90,80) if estilo == "Eco Wellness" else pdf.set_text_color(50,50,50)
             
         pdf.set_xy(15, y_cliente + 2)
         pdf.set_font("Arial", 'B', 8)
-        pdf.set_text_color(200,200,200) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
         
         info_c = f"USUARIO: {limpiar_texto(cliente['nombre']).upper()}  |  EDAD: {limpiar_texto(cliente['edad'])}  |  PESO: {limpiar_texto(cliente['peso'])}  |  ALTURA: {limpiar_texto(cliente['altura'])}"
         pdf.cell(caja_w, 4, info_c, align='C')
@@ -113,8 +143,12 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 
     def dibujar_pie_pagina():
         pdf.set_y(pdf.h - 15)
-        if estilo in ["Urban Power", "Cyber Neon"]:
-            pdf.set_fill_color(0, 0, 0) if estilo == "Urban Power" else pdf.set_fill_color(*c_caja)
+        if estilo in ["Urban Power"]:
+            pdf.set_fill_color(0,0,0)
+            pdf.rect((pdf.w/2) - 45, pdf.h - 17, 90, 10, 'F')
+            pdf.set_text_color(255,255,255)
+        elif estilo in ["Cyber Neon"]:
+            pdf.set_fill_color(*c_caja)
             pdf.rect((pdf.w/2) - 45, pdf.h - 17, 90, 10, 'F')
             pdf.set_text_color(255, 255, 255)
         else:
@@ -134,13 +168,15 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             col_w = caja_w / 7 
             
             pdf.set_fill_color(*c_acento)
+            # Color texto cabecera tabla
             if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]:
-                pdf.set_text_color(0, 0, 0)
+                 pdf.set_text_color(0, 0, 0)
             else:
-                pdf.set_text_color(255, 255, 255)
-                
-            # Borde visible si es Minimal
+                 pdf.set_text_color(255, 255, 255)
+
+            # Borde de la tabla
             if estilo == "Clean Minimal": pdf.set_draw_color(0, 0, 0)
+            elif estilo == "Cyber Neon": pdf.set_draw_color(*c_acento)
             else: pdf.set_draw_color(200, 200, 200)
 
             pdf.set_font("Arial", 'B', 9)
@@ -155,6 +191,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
                 if len(valid_items) > max_items: max_items = len(valid_items)
             
+            # Color texto contenido tabla
             pdf.set_text_color(*c_texto)
 
             for i in range(max_items):
@@ -190,11 +227,17 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     pdf.set_text_color(*c_texto)
 
                 fill_row = True if i % 2 == 0 else False
-                pdf.set_fill_color(*c_caja) if fill_row else pdf.set_fill_color(*c_bg)
+                # Color de fondo de celda alternado
+                if estilo == "Clean Minimal":
+                    pdf.set_fill_color(245,245,245) if fill_row else pdf.set_fill_color(255,255,255)
+                else:
+                    pdf.set_fill_color(*c_caja) if fill_row else pdf.set_fill_color(*c_bg)
                 
                 for col_idx, dia in enumerate(dias):
                     x_pos = 15 + (col_idx * col_w)
-                    pdf.rect(x_pos, y_offset, col_w, max_h, 'DF' if fill_row else 'D')
+                    # Usar 'DF' (Draw & Fill) si no es minimal, para que se vea el color sobre la imagen
+                    style_cell = 'D' if estilo == "Clean Minimal" and not fill_row else 'DF'
+                    pdf.rect(x_pos, y_offset, col_w, max_h, style_cell)
                     
                     valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
                     if i < len(valid_items):
@@ -240,11 +283,13 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     dibujar_pie_pagina()
                     y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
                 
+                # Cajas de contenido
                 if estilo == "Clean Minimal":
                     pdf.set_draw_color(0, 0, 0)
                     pdf.rect(15, y_offset, 40, altura_caja, 'D') 
                     pdf.rect(60, y_offset, 135, altura_caja, 'D') 
                 else:
+                    # Usar color de caja sólido para que resalte sobre el fondo
                     pdf.set_fill_color(*c_acento)
                     pdf.rect(15, y_offset, 40, altura_caja, 'F')
                     pdf.set_fill_color(*c_caja)
@@ -253,11 +298,13 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 pdf.set_xy(15, y_offset + (altura_caja/2) - 2.5)
                 pdf.set_font("Arial", 'B', 11)
                 
+                # Color texto día
                 if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0,0,0)
                 else: pdf.set_text_color(255,255,255) 
                     
                 pdf.cell(40, 5, dia.upper(), align='C')
 
+                # Color texto contenido
                 pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
                 
                 y_col_izq = y_offset + 3
@@ -308,13 +355,14 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         if estilo == "Clean Minimal":
             pdf.set_draw_color(0, 0, 0)
             pdf.rect(15, y_offset, caja_w, pdf.h - y_offset - 25, 'D')
+            pdf.set_text_color(50,50,50)
         else:
             pdf.set_fill_color(*c_caja)
             pdf.rect(15, y_offset, caja_w, pdf.h - y_offset - 25, 'F')
+            pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
             
         pdf.set_xy(20, y_offset + 5)
         pdf.set_font("Arial", '', 10)
-        pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
         pdf.multi_cell(caja_w - 10, 6, limpiar_texto(consejos))
         dibujar_pie_pagina()
 
@@ -329,13 +377,14 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 # --- INTERFAZ DE USUARIO ---
 st.set_page_config(page_title="Coach System Pro", layout="wide")
 
+# Diccionario de colores para la VISTA PREVIA (Simulación visual)
 preview_colors = {
-    "Urban Power": {"bg": "#ffffff", "text": "#000000", "accent": "#f4c430", "box": "#f0f0f0", "border": "none"},
-    "Clean Minimal": {"bg": "#ffffff", "text": "#000000", "accent": "#ffffff", "box": "#ffffff", "border": "1px solid #000000"},
-    "Dark Elite": {"bg": "#191919", "text": "#ffffff", "accent": "#dc143c", "box": "#282828", "border": "none"},
-    "Ocean Fitness": {"bg": "#ffffff", "text": "#000000", "accent": "#0069b4", "box": "#e6f0fa", "border": "none"},
-    "Cyber Neon": {"bg": "#0f0f0f", "text": "#ffffff", "accent": "#39ff14", "box": "#232323", "border": "none"},
-    "Eco Wellness": {"bg": "#ffffff", "text": "#333333", "accent": "#82c850", "box": "#f2f9f2", "border": "1px solid #e0e0e0"}
+    "Urban Power": {"bg": "#f8e71c", "text": "#000000", "accent": "#000000", "box": "#ffffff", "border": "none"}, # Amarillo intenso
+    "Clean Minimal": {"bg": "#ffffff", "text": "#000000", "accent": "#000000", "box": "#ffffff", "border": "1px solid #000000"},
+    "Dark Elite": {"bg": "#141414", "text": "#ffffff", "accent": "#c8102e", "box": "#282828", "border": "none"}, # Fibra oscura
+    "Ocean Fitness": {"bg": "#e0f0ff", "text": "#002040", "accent": "#0069b4", "box": "#f0f8ff", "border": "none"}, # Azul agua
+    "Cyber Neon": {"bg": "#0a0a0f", "text": "#e0ffe0", "accent": "#39ff14", "box": "#1a1a25", "border": "1px solid #39ff14"}, # Neon tech
+    "Eco Wellness": {"bg": "#f4f8f4", "text": "#2e4a2e", "accent": "#64a33c", "box": "#ffffff", "border": "1px solid #c0dcc0"} # Hoja verde
 }
 
 # --- PANEL LATERAL ---
@@ -372,45 +421,53 @@ with st.sidebar:
     st.divider()
 
     st.header("🎨 Diseño del Documento")
-    # --- AQUI SEPARAMOS FORMATO Y ESTILO ---
-    formato_elegido = st.radio("Estructura del PDF:", ["Vertical (Bloques)", "Horizontal (Tabla 7 Días)"])
+    # SELECCIÓN SEPARADA DE ESTRUCTURA Y COLOR
+    formato_elegido = st.radio("1. Estructura del PDF:", ["Vertical (Bloques)", "Horizontal (Tabla 7 Días)"])
     st.markdown("<br>", unsafe_allow_html=True)
     
     opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon", "Eco Wellness"]
-    estilo_elegido = st.selectbox("Tema de Color:", opciones_estilos, key="k_estilo")
+    estilo_elegido = st.selectbox("2. Tema de Color y Fondo:", opciones_estilos, key="k_estilo")
 
-    st.write("**Vista Previa del Diseño:**")
+    st.write("**Vista Previa (Aproximada):**")
     estilo_css = preview_colors[estilo_elegido]
     
+    # Lógica de color de texto para la vista previa
+    if estilo_elegido == "Clean Minimal":
+         c_txt_dia = "#000000" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["text"]
+         bg_dia = "#ffffff" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["accent"]
+         border_dia = "1px solid #000"
+    else:
+         c_txt_dia = "#ffffff" if estilo_elegido not in ["Urban Power", "Cyber Neon"] else "#000000"
+         bg_dia = estilo_css["accent"]
+         border_dia = estilo_css["border"]
+
     if formato_elegido == "Vertical (Bloques)":
-        color_texto_dia = "#000000" if estilo_elegido in ["Urban Power", "Cyber Neon", "Clean Minimal"] else "#ffffff"
         html_preview = f"""
         <div style="background-color: {estilo_css['bg']}; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif;">
             <div style="display: flex; height: 60px;">
-                <div style="background-color: {estilo_css['accent']}; width: 30%; display: flex; align-items: center; justify-content: center; border: {estilo_css['border']}; border-right: none;">
-                    <b style="color: {color_texto_dia}; font-size: 14px;">LUNES</b>
+                <div style="background-color: {bg_dia}; width: 30%; display: flex; align-items: center; justify-content: center; border: {border_dia}; border-right: none;">
+                    <b style="color: {c_txt_dia}; font-size: 14px;">LUNES</b>
                 </div>
-                <div style="background-color: {estilo_css['box']}; width: 70%; padding: 8px; border: {estilo_css['border']}; border-left: none;">
+                <div style="background-color: {estilo_css['box']}; width: 70%; padding: 8px; border: {border_dia}; border-left: none;">
                     <div style="color: {estilo_css['text']}; font-size: 11px; font-weight: bold;">PRESS DE BANCA</div>
-                    <div style="color: {estilo_css['text']}; font-size: 10px; font-style: italic; opacity: 0.8;">4 SETS | 12 REPS | 60 SEG | 20 KG</div>
+                    <div style="color: {estilo_css['text']}; font-size: 10px; font-style: italic; opacity: 0.8;">4 SETS | 12 REPS</div>
                 </div>
             </div>
         </div>
         """
     else:
-        color_texto_dia = "#000000" if estilo_elegido in ["Urban Power", "Cyber Neon", "Clean Minimal"] else "#ffffff"
         html_preview = f"""
         <div style="background-color: {estilo_css['bg']}; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif; overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 9px;">
-                <tr style="background-color: {estilo_css['accent']}; color: {color_texto_dia}; font-weight: bold;">
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;">LUNES</td>
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;">MARTES</td>
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;">MIERCOLES</td>
+                <tr style="background-color: {bg_dia}; color: {c_txt_dia}; font-weight: bold;">
+                    <td style="border: {border_dia}; padding: 5px;">LUNES</td>
+                    <td style="border: {border_dia}; padding: 5px;">MARTES</td>
+                    <td style="border: {border_dia}; padding: 5px;">MIERCOLES</td>
                 </tr>
                 <tr style="background-color: {estilo_css['box']}; color: {estilo_css['text']};">
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;"><b>PRESS BANCA</b><br>4S | 12R | 60s</td>
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;"><b>SENTADILLA</b><br>4S | 10R | 90s</td>
-                    <td style="border: {estilo_css['border']} if '{estilo_elegido}'=='Clean Minimal' else 1px solid #ccc; padding: 5px;"><b>DESCANSO</b><br>Recuperación</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>PRESS</b><br>4S | 12R</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>SENTAD.</b><br>4S | 10R</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>DESC.</b><br>Recup.</td>
                 </tr>
             </table>
         </div>
