@@ -23,13 +23,11 @@ def estimar_altura_texto(texto, limite_caracteres=45):
 BACKUP_FILE = "backup_progreso.json"
 
 def guardar_progreso_local():
-    """Guarda todas las variables de texto y números en un archivo local"""
     estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
     with open(BACKUP_FILE, "w", encoding="utf-8") as f:
         json.dump(estado_limpio, f, ensure_ascii=False, indent=4)
 
 def cargar_progreso_local():
-    """Recupera las variables del archivo local y recarga la página"""
     if os.path.exists(BACKUP_FILE):
         with open(BACKUP_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -38,12 +36,10 @@ def cargar_progreso_local():
         st.rerun()
 
 def generar_json_descarga():
-    """Genera un JSON para descargar (Plantillas)"""
     estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
     return json.dumps(estado_limpio, ensure_ascii=False, indent=4)
 
 def cargar_desde_archivo(uploaded_file):
-    """Carga datos desde un archivo JSON subido"""
     if uploaded_file is not None:
         data = json.load(uploaded_file)
         for k, v in data.items():
@@ -55,6 +51,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     pdf = FPDF()
     pdf.set_auto_page_break(auto=False) 
     
+    # 🎨 Configuración de Colores (NUEVA PLANTILLA AÑADIDA)
     if estilo == "Dark Elite":
         c_bg, c_texto, c_acento, c_caja = (25, 25, 25), (255, 255, 255), (220, 20, 60), (40, 40, 40)
     elif estilo == "Clean Minimal":
@@ -63,6 +60,8 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (0, 105, 180), (230, 240, 250)
     elif estilo == "Cyber Neon":
         c_bg, c_texto, c_acento, c_caja = (15, 15, 15), (255, 255, 255), (57, 255, 20), (35, 35, 35)
+    elif estilo == "Eco Wellness": # NUEVO ESTILO BASADO EN TU IMAGEN
+        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (40, 40, 40), (130, 200, 80), (248, 253, 248)
     else: # Urban Power
         c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (244, 196, 48), (240, 240, 240)
 
@@ -158,7 +157,15 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 
             pdf.set_xy(15, y_offset + (altura_caja/2) - 2.5)
             pdf.set_font("Arial", 'B', 11)
-            pdf.set_text_color(0,0,0) if estilo in ["Urban Power", "Cyber Neon"] else pdf.set_text_color(*c_texto)
+            
+            # Ajuste de color del texto del día para que combine mejor
+            if estilo in ["Urban Power", "Cyber Neon"]:
+                pdf.set_text_color(0,0,0)
+            elif estilo in ["Eco Wellness", "Ocean Fitness"]:
+                pdf.set_text_color(255,255,255) # Texto blanco sobre fondo verde/azul
+            else:
+                pdf.set_text_color(*c_texto)
+                
             pdf.cell(40, 5, dia.upper(), align='C')
 
             pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
@@ -232,17 +239,18 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 # --- INTERFAZ DE USUARIO ---
 st.set_page_config(page_title="Coach System Pro", layout="wide")
 
+# AGREGADO: NUEVO ESTILO ECO WELLNESS A LA VISTA PREVIA
 preview_styles = {
     "Urban Power": {"bg": "#ffffff", "text": "#000000", "accent": "#f4c430", "box": "#f0f0f0", "border": "none"},
     "Clean Minimal": {"bg": "#ffffff", "text": "#000000", "accent": "#ffffff", "box": "#ffffff", "border": "1px solid #000000"},
     "Dark Elite": {"bg": "#191919", "text": "#ffffff", "accent": "#dc143c", "box": "#282828", "border": "none"},
     "Ocean Fitness": {"bg": "#ffffff", "text": "#000000", "accent": "#0069b4", "box": "#e6f0fa", "border": "none"},
-    "Cyber Neon": {"bg": "#0f0f0f", "text": "#ffffff", "accent": "#39ff14", "box": "#232323", "border": "none"}
+    "Cyber Neon": {"bg": "#0f0f0f", "text": "#ffffff", "accent": "#39ff14", "box": "#232323", "border": "none"},
+    "Eco Wellness": {"bg": "#ffffff", "text": "#282828", "accent": "#82c850", "box": "#f8fdf8", "border": "none"}
 }
 
 # --- PANEL LATERAL ---
 with st.sidebar:
-    # 1. SECCIÓN DE SEGURIDAD Y RESPALDOS
     st.header("💾 Seguridad y Respaldos")
     col_g1, col_g2 = st.columns(2)
     if col_g1.button("💾 Guardar Local", help="Guarda el progreso en tu PC para no perderlo."):
@@ -265,7 +273,6 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. SECCIÓN DE MARCA
     st.header("⚙️ Tu Marca (Logo)")
     logo_subido = st.file_uploader("Sube tu Logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
     entrenador = st.text_input("Nombre del Entrenador", "TU NOMBRE O MARCA", key="k_entrenador")
@@ -275,14 +282,21 @@ with st.sidebar:
     
     st.divider()
 
-    # 3. SECCIÓN DE ESTILOS
     st.header("🎨 Selección de Plantilla")
-    opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon"]
+    # AÑADIDA LA OPCIÓN ECO WELLNESS AL SELECTOR
+    opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon", "Eco Wellness"]
     estilo_elegido = st.radio("Elige tu diseño:", opciones_estilos, key="k_estilo")
 
     st.write("**Vista Previa del Diseño:**")
     estilo_css = preview_styles[estilo_elegido]
-    color_texto_dia = "#000" if estilo_elegido in ["Urban Power", "Cyber Neon"] else estilo_css["text"]
+    
+    # Lógica para que el texto del día en la vista previa combine con el color de acento
+    if estilo_elegido in ["Ocean Fitness", "Eco Wellness", "Dark Elite"]:
+        color_texto_dia = "#ffffff" 
+    elif estilo_elegido in ["Urban Power", "Cyber Neon"]:
+        color_texto_dia = "#000000"
+    else:
+        color_texto_dia = estilo_css["text"]
     
     html_preview = f"""
     <div style="background-color: {estilo_css['bg']}; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif;">
@@ -315,7 +329,6 @@ dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", 
 
 tab1, tab2, tab3 = st.tabs(["🔥 Entrenamiento", "🍎 Nutrición", "💡 Consejos"])
 
-# --- TAB 1: ENTRENAMIENTO ---
 with tab1:
     datos_rutina = {}
     for dia in dias_semana:
@@ -332,7 +345,6 @@ with tab1:
                 lista_ej.append({"nombre": nombre, "s": s, "r": r, "seg": seg, "peso (kg)": p})
             datos_rutina[dia] = lista_ej
 
-# --- TAB 2: NUTRICIÓN ---
 with tab2:
     datos_nutricion = {}
     for dia in dias_semana:
@@ -346,7 +358,6 @@ with tab2:
                 lista_comidas.append({"nombre": tipo, "detalle": detalle})
             datos_nutricion[dia] = lista_comidas
 
-# --- TAB 3: CONSEJOS ---
 with tab3:
     st.info("Escribe aquí todas las indicaciones extra: cantidad de agua, descanso, uso de suplementos, etc.")
     texto_consejos = st.text_area("Consejos y Recomendaciones:", height=250, key="k_consejos")
