@@ -5,23 +5,217 @@ import tempfile
 import os
 import math
 import json
+import time
+import uuid
 
-# --- FUNCIÓN PARA EVITAR CRASHEOS CON EMOJIS ---
+# ==========================================
+# CONFIGURACIÓN DE PÁGINA (Debe ir primero)
+# ==========================================
+st.set_page_config(page_title="Coach System Pro", layout="wide")
+
+# ==========================================
+# 🔒 SISTEMA DE LICENCIAS Y SEGURIDAD (V3)
+# ==========================================
+ARCHIVO_MASTER_LICENCIAS = "licencias_master.json"
+ARCHIVO_LICENCIA_LOCAL = "licencia_guardada.json"
+ARCHIVO_DEVICE_ID = "dispositivo_id.json"
+
+def obtener_device_id():
+    """Genera y guarda una huella digital única para esta computadora."""
+    if os.path.exists(ARCHIVO_DEVICE_ID):
+        try:
+            with open(ARCHIVO_DEVICE_ID, "r", encoding="utf-8") as f:
+                return json.load(f).get("id")
+        except:
+            pass
+    nuevo_id = str(uuid.uuid4())
+    with open(ARCHIVO_DEVICE_ID, "w", encoding="utf-8") as f:
+        json.dump({"id": nuevo_id}, f)
+    return nuevo_id
+
+def cargar_licencias_validas():
+    if not os.path.exists(ARCHIVO_MASTER_LICENCIAS):
+        licencias_ejemplo = {
+            "ADMIN12345": [],
+            "CLIENTE001": [],
+            "FITNESS999": []
+        }
+        with open(ARCHIVO_MASTER_LICENCIAS, "w", encoding="utf-8") as f:
+            json.dump(licencias_ejemplo, f, indent=4)
+    
+    with open(ARCHIVO_MASTER_LICENCIAS, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        if isinstance(data, list):
+            data = {codigo: [] for codigo in data}
+            guardar_licencias_master(data)
+        return data
+
+def guardar_licencias_master(data):
+    with open(ARCHIVO_MASTER_LICENCIAS, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+def verificar_licencia_activa(validas, my_device_id):
+    if os.path.exists(ARCHIVO_LICENCIA_LOCAL):
+        try:
+            with open(ARCHIVO_LICENCIA_LOCAL, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                codigo_guardado = data.get("licencia_activa")
+                if codigo_guardado in validas and my_device_id in validas[codigo_guardado]:
+                    return True
+        except:
+            return False
+    return False
+
+def activar_licencia_local(codigo):
+    with open(ARCHIVO_LICENCIA_LOCAL, "w", encoding="utf-8") as f:
+        json.dump({"licencia_activa": codigo}, f, indent=4)
+
+# --- EJECUCIÓN DEL BLOQUEO ---
+mi_device_id = obtener_device_id()
+licencias_validas = cargar_licencias_validas()
+acceso_concedido = verificar_licencia_activa(licencias_validas, mi_device_id)
+
+if not acceso_concedido:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.error("🔒 **SISTEMA BLOQUEADO - SE REQUIERE LICENCIA**")
+        st.write("Bienvenido a **Coach System Pro**. Por favor ingresa tu código de acceso (10 dígitos). *Nota: Esta licencia es válida para un máximo de 3 dispositivos.*")
+        
+        codigo_ingresado = st.text_input("🔑 Código de Licencia:", max_chars=10, type="password")
+        
+        if st.button("🚀 ACTIVAR PROGRAMA", use_container_width=True):
+            if codigo_ingresado in licencias_validas:
+                dispositivos_registrados = licencias_validas[codigo_ingresado]
+                
+                if mi_device_id in dispositivos_registrados or len(dispositivos_registrados) < 3:
+                    
+                    # 🏋️‍♂️ NUEVA ANIMACIÓN PREMIUM (3 SEGUNDOS)
+                    animacion_placeholder = st.empty()
+                    with animacion_placeholder.container():
+                        st.markdown("""
+                        <style>
+                            .spinner-container {
+                                position: relative;
+                                width: 100px;
+                                height: 100px;
+                                margin: 0 auto;
+                            }
+                            .spinner-ring {
+                                position: absolute;
+                                width: 100%;
+                                height: 100%;
+                                border-radius: 50%;
+                                border: 5px solid rgba(76, 175, 80, 0.2);
+                                border-top-color: #4CAF50;
+                                border-left-color: #4CAF50;
+                                animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+                            }
+                            .spinner-icon {
+                                position: absolute;
+                                top: 50%;
+                                left: 50%;
+                                transform: translate(-50%, -50%);
+                                font-size: 45px;
+                                filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.2));
+                                animation: pulse 1.5s ease-in-out infinite;
+                            }
+                            @keyframes spin { 100% { transform: rotate(360deg); } }
+                            @keyframes pulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.15); } }
+                        </style>
+                        <div style="text-align: center; height: 300px; display: flex; flex-direction: column; justify-content: center;">
+                            <div class="spinner-container">
+                                <div class="spinner-ring"></div>
+                                <div class="spinner-icon">🏋️</div>
+                            </div>
+                            <h3 style="color: #4CAF50; margin-top: 25px;">Licencia Validada</h3>
+                            <p style="font-family: monospace; color: #666; font-size: 14px;">Iniciando entorno premium...</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    time.sleep(3) # REDUCIDO A 3 SEGUNDOS
+                    animacion_placeholder.empty() 
+                    
+                    if mi_device_id not in dispositivos_registrados:
+                        licencias_validas[codigo_ingresado].append(mi_device_id)
+                        guardar_licencias_master(licencias_validas)
+                        
+                    activar_licencia_local(codigo_ingresado)
+                    st.rerun() 
+                else:
+                    st.error(f"❌ **Límite Excedido:** Esta licencia ya se encuentra en uso en 3 dispositivos distintos.")
+            elif codigo_ingresado == "":
+                st.warning("Por favor, ingresa un código.")
+            else:
+                st.error("❌ Código inválido. Verifica el código o contacta a tu distribuidor.")
+    
+    st.stop() 
+
+
+# ==========================================
+# CÓDIGO PRINCIPAL DE LA APLICACIÓN
+# ==========================================
+
 def limpiar_texto(texto):
     if not texto: return ""
     return str(texto).encode('latin-1', 'ignore').decode('latin-1')
 
-# --- ESTIMADOR DE ALTURA DINÁMICA ---
-def estimar_altura_texto(texto, ancho_celda=170, tamaño_fuente=8):
+def calcular_altura_multicell(pdf_obj, texto, ancho, alto_linea):
     if not texto: return 0
-    caracteres_por_linea = int(ancho_celda / (tamaño_fuente * 0.25)) 
-    lineas = 0
-    for parrafo in texto.split('\n'):
-        lineas += max(1, math.ceil(len(parrafo) / caracteres_por_linea))
-    altura_linea = tamaño_fuente * 0.5 
-    return lineas * altura_linea
+    lineas_totales = 0
+    ancho_seguro = ancho - 0.5 
+    for parrafo in str(texto).split('\n'):
+        palabras = parrafo.split(' ')
+        linea_actual = ""
+        for palabra in palabras:
+            prueba = palabra if linea_actual == "" else linea_actual + " " + palabra
+            if pdf_obj.get_string_width(prueba) > ancho_seguro and linea_actual != "":
+                lineas_totales += 1
+                linea_actual = palabra
+            else:
+                linea_actual = prueba
+        lineas_totales += 1
+    return lineas_totales * alto_linea
 
-# --- FUNCIONES DE GUARDADO Y RESPALDO ---
+# --- NUEVO: OPTIMIZADOR HD PARA IMÁGENES DE FONDO ---
+def optimizar_fondo_hd(ruta_imagen, pdf_w, pdf_h):
+    """
+    Recorta y reescala la imagen de fondo para que coincida exactamente 
+    con las proporciones del PDF, evitando que se vea estirada o pixelada.
+    """
+    try:
+        # Aumentamos la resolución para calidad de impresión (300dpi aprox)
+        # 1 mm = 11.81 píxeles
+        target_w = int(pdf_w * 11.81)
+        target_h = int(pdf_h * 11.81)
+        
+        img = Image.open(ruta_imagen).convert("RGB")
+        img_ratio = img.width / img.height
+        target_ratio = target_w / target_h
+        
+        # Recorte (Crop) inteligente para no aplastar la imagen
+        if img_ratio > target_ratio:
+            # La imagen es muy ancha, cortamos los lados
+            new_w = int(img.height * target_ratio)
+            left = (img.width - new_w) // 2
+            img = img.crop((left, 0, left + new_w, img.height))
+        else:
+            # La imagen es muy alta, cortamos arriba y abajo
+            new_h = int(img.width / target_ratio)
+            top = (img.height - new_h) // 2
+            img = img.crop((0, top, img.width, top + new_h))
+            
+        # Reescalado en alta definición (LANCZOS)
+        img = img.resize((target_w, target_h), getattr(Image, 'Resampling', Image).LANCZOS)
+        
+        # Guardado temporal
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        img.save(tmp.name, format="JPEG", quality=95)
+        return tmp.name
+    except Exception as e:
+        return None
+
 BACKUP_FILE = "backup_progreso.json"
 
 def guardar_progreso_local():
@@ -48,26 +242,23 @@ def cargar_desde_archivo(uploaded_file):
             st.session_state[k] = v
         st.rerun()
 
-# --- MAPEO DE IMÁGENES DE FONDO (Deben estar en la misma carpeta que app.py) ---
 BG_IMAGES = {
     "Urban Power": "bg_urban.jpg",
     "Dark Elite": "bg_dark.jpg",
     "Ocean Fitness": "bg_ocean.jpg",
     "Cyber Neon": "bg_cyber.jpg",
     "Eco Wellness": "bg_eco.jpg",
-    "Clean Minimal": None # Este estilo no lleva fondo
+    "Clean Minimal": None 
 }
 
-# --- MOTOR PDF OPTIMIZADO ---
-def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, inc_entreno, inc_nutri, inc_consejos):
+def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, tipo_fondo, inc_entreno, inc_nutri, inc_consejos):
     orientacion = 'L' if formato == "Horizontal (Tabla 7 Días)" else 'P'
     pdf = FPDF(orientation=orientacion)
     pdf.set_auto_page_break(auto=False) 
     
-    # Obtener nombre de la imagen de fondo
-    bg_image_file = BG_IMAGES.get(estilo)
+    bg_filename = BG_IMAGES.get(estilo)
+    usar_textura = (tipo_fondo == "Personalizado (Textura/Imagen)")
 
-    # Configuración de Colores (Ajustados para buen contraste con fondos)
     if estilo == "Dark Elite":
         c_bg, c_texto, c_acento, c_caja = (20, 20, 20), (240, 240, 240), (200, 10, 50), (40, 40, 40)
     elif estilo == "Clean Minimal":
@@ -78,7 +269,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         c_bg, c_texto, c_acento, c_caja = (10, 10, 15), (240, 255, 240), (57, 255, 20), (25, 25, 35)
     elif estilo == "Eco Wellness": 
         c_bg, c_texto, c_acento, c_caja = (248, 253, 248), (40, 60, 40), (100, 180, 60), (240, 250, 240)
-    else: # Urban Power
+    else: 
         c_bg, c_texto, c_acento, c_caja = (255, 245, 200), (20, 20, 20), (255, 204, 0), (255, 255, 240)
 
     def obtener_ancho_caja():
@@ -87,26 +278,34 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     def dibujar_fondo_y_cabecera(titulo_pagina):
         pdf.add_page()
 
-        # 1. DIBUJAR IMAGEN DE FONDO (Si existe el archivo)
-        if bg_image_file and os.path.exists(bg_image_file):
-            # Se dibuja desde la esquina (0,0) ocupando todo el ancho y alto
-            pdf.image(bg_image_file, x=0, y=0, w=pdf.w, h=pdf.h)
-        else:
-            # 2. FALLBACK: Color sólido si no hay imagen o no se encuentra
-            # Solo dibujamos si no es blanco puro para ahorrar recursos
-            if c_bg != (255, 255, 255):
-                pdf.set_fill_color(*c_bg)
-                pdf.rect(0, 0, pdf.w, pdf.h, 'F')
+        fondo_dibujado = False
+        if usar_textura and bg_filename:
+            ruta_imagen = os.path.join("img", bg_filename)
+            if os.path.exists(ruta_imagen):
+                # Aplicar la nueva función HD
+                fondo_hd = optimizar_fondo_hd(ruta_imagen, pdf.w, pdf.h)
+                if fondo_hd:
+                    try:
+                        pdf.image(fondo_hd, x=0, y=0, w=pdf.w, h=pdf.h)
+                        fondo_dibujado = True
+                        os.remove(fondo_hd) # Limpiar el temporal para no saturar el PC
+                    except Exception:
+                        pass
+        
+        if not fondo_dibujado and c_bg != (255, 255, 255):
+            pdf.set_fill_color(*c_bg)
+            pdf.rect(0, 0, pdf.w, pdf.h, 'F')
             
-        # Logo
         if logo_file is not None:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-                tmp_file.write(logo_file.getvalue())
-                logo_path = tmp_file.name
-            pdf.image(logo_path, x=15, y=10, w=25)
-            os.remove(logo_path)
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                    tmp_file.write(logo_file.getvalue())
+                    logo_path = tmp_file.name
+                pdf.image(logo_path, x=15, y=10, w=25)
+                os.remove(logo_path)
+            except Exception:
+                pass
 
-        # Textos de cabecera
         pdf.set_text_color(*c_texto)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 10, limpiar_texto(config['entrenador']).upper(), ln=True, align='C')
@@ -119,19 +318,17 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         caja_w = obtener_ancho_caja()
         y_cliente = pdf.get_y()
         
-        # Caja de cliente (Ajustada para transparencia si hay fondo)
         if estilo == "Clean Minimal":
             pdf.set_draw_color(0, 0, 0)
             pdf.rect(15, y_cliente, caja_w, 8, 'D')
             pdf.set_text_color(50, 50, 50)
         elif estilo == "Urban Power":
-             pdf.set_fill_color(255, 255, 255) # Caja blanca para contraste en Urban
+             pdf.set_fill_color(255, 255, 255)
              pdf.rect(15, y_cliente, caja_w, 8, 'F')
              pdf.set_text_color(0, 0, 0)
         else:
             pdf.set_fill_color(*c_caja)
             pdf.rect(15, y_cliente, caja_w, 8, 'F')
-            # Color de texto del cliente según el fondo
             pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(80,90,80) if estilo == "Eco Wellness" else pdf.set_text_color(50,50,50)
             
         pdf.set_xy(15, y_cliente + 2)
@@ -160,21 +357,16 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
         dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
         
-        # =========================================================
-        # ESTRUCTURA HORIZONTAL (TABLA 7 DÍAS)
-        # =========================================================
         if formato == "Horizontal (Tabla 7 Días)":
             caja_w = obtener_ancho_caja()
             col_w = caja_w / 7 
             
             pdf.set_fill_color(*c_acento)
-            # Color texto cabecera tabla
             if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]:
                  pdf.set_text_color(0, 0, 0)
             else:
                  pdf.set_text_color(255, 255, 255)
 
-            # Borde de la tabla
             if estilo == "Clean Minimal": pdf.set_draw_color(0, 0, 0)
             elif estilo == "Cyber Neon": pdf.set_draw_color(*c_acento)
             else: pdf.set_draw_color(200, 200, 200)
@@ -191,7 +383,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
                 if len(valid_items) > max_items: max_items = len(valid_items)
             
-            # Color texto contenido tabla
             pdf.set_text_color(*c_texto)
 
             for i in range(max_items):
@@ -200,13 +391,20 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
                     if i < len(valid_items):
                         item = valid_items[i]
-                        nom_h = estimar_altura_texto(limpiar_texto(item['nombre']), col_w, 8)
+                        
+                        pdf.set_font("Arial", 'B', 7.5)
+                        nom_h = calcular_altura_multicell(pdf, limpiar_texto(item['nombre']).upper(), col_w - 2, 3.5)
+                        
                         if tipo_modulo == "entreno":
-                            det = f"{item['s']}S | {item['r']}R | {item['seg']}s"
-                            det_h = estimar_altura_texto(det, col_w, 7.5)
+                            det = f"{limpiar_texto(item['s'])}S | {limpiar_texto(item['r'])}R | {limpiar_texto(item['seg'])}s"
+                            if item.get('peso (kg)') and str(item.get('peso (kg)')) != "0":
+                                det += f"\n{limpiar_texto(item['peso (kg)'])} KG"
+                            pdf.set_font("Arial", '', 7)
+                            det_h = calcular_altura_multicell(pdf, det, col_w - 2, 3.5)
                         else:
                             det = limpiar_texto(item['detalle'])
-                            det_h = estimar_altura_texto(det, col_w, 7.5)
+                            pdf.set_font("Arial", '', 7)
+                            det_h = calcular_altura_multicell(pdf, det, col_w - 2, 3.5)
                         
                         h_total = nom_h + det_h + 8 
                         if h_total > max_h: max_h = h_total
@@ -227,7 +425,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     pdf.set_text_color(*c_texto)
 
                 fill_row = True if i % 2 == 0 else False
-                # Color de fondo de celda alternado
                 if estilo == "Clean Minimal":
                     pdf.set_fill_color(245,245,245) if fill_row else pdf.set_fill_color(255,255,255)
                 else:
@@ -235,7 +432,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 
                 for col_idx, dia in enumerate(dias):
                     x_pos = 15 + (col_idx * col_w)
-                    # Usar 'DF' (Draw & Fill) si no es minimal, para que se vea el color sobre la imagen
                     style_cell = 'D' if estilo == "Clean Minimal" and not fill_row else 'DF'
                     pdf.rect(x_pos, y_offset, col_w, max_h, style_cell)
                     
@@ -261,9 +457,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                             
                 y_offset += max_h
 
-        # =========================================================
-        # ESTRUCTURA VERTICAL (BLOQUES)
-        # =========================================================
         else:
             for dia in dias:
                 items = datos_dict.get(dia, [])
@@ -273,23 +466,39 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 
                 for idx, item in enumerate(items):
                     if not item['nombre']: continue
-                    h_item = 5 + (4 if tipo_modulo == "entreno" else estimar_altura_texto(item['detalle'], ancho_celda=60))
+                    
+                    nom_limpio = limpiar_texto(item['nombre']).upper()
+                    pdf.set_font("Arial", 'B', 8)
+                    nom_h = calcular_altura_multicell(pdf, nom_limpio, 60, 4)
+                    
+                    if tipo_modulo == "entreno":
+                        texto_detalle = f"{limpiar_texto(item['s'])} SETS | {limpiar_texto(item['r'])} REPS | {limpiar_texto(item['seg'])} SEG"
+                        if item.get('peso (kg)') and str(item.get('peso (kg)')) != "0":
+                            texto_detalle += f" | {limpiar_texto(item['peso (kg)'])} KG"
+                        pdf.set_font("Arial", 'I', 7.5)
+                        det_h = calcular_altura_multicell(pdf, texto_detalle, 60, 4)
+                    else:
+                        det_limpio = limpiar_texto(item['detalle'])
+                        pdf.set_font("Arial", '', 7.5)
+                        det_h = calcular_altura_multicell(pdf, det_limpio, 60, 3.5)
+                    
+                    h_item = nom_h + det_h
                     if idx < 3: alturas_col_izq.append(h_item)
                     else: alturas_col_der.append(h_item)
                 
-                altura_caja = max(20, sum(alturas_col_izq) + (len(alturas_col_izq) * 4), sum(alturas_col_der) + (len(alturas_col_der) * 4)) + 5 
+                alto_izq = sum(alturas_col_izq) + (len(alturas_col_izq) * 4) 
+                alto_der = sum(alturas_col_der) + (len(alturas_col_der) * 4)
+                altura_caja = max(20, alto_izq, alto_der) + 6 
                 
                 if y_offset + altura_caja > 265:
                     dibujar_pie_pagina()
                     y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
                 
-                # Cajas de contenido
                 if estilo == "Clean Minimal":
                     pdf.set_draw_color(0, 0, 0)
                     pdf.rect(15, y_offset, 40, altura_caja, 'D') 
                     pdf.rect(60, y_offset, 135, altura_caja, 'D') 
                 else:
-                    # Usar color de caja sólido para que resalte sobre el fondo
                     pdf.set_fill_color(*c_acento)
                     pdf.rect(15, y_offset, 40, altura_caja, 'F')
                     pdf.set_fill_color(*c_caja)
@@ -298,13 +507,11 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 pdf.set_xy(15, y_offset + (altura_caja/2) - 2.5)
                 pdf.set_font("Arial", 'B', 11)
                 
-                # Color texto día
                 if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0,0,0)
                 else: pdf.set_text_color(255,255,255) 
                     
                 pdf.cell(40, 5, dia.upper(), align='C')
 
-                # Color texto contenido
                 pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
                 
                 y_col_izq = y_offset + 3
@@ -317,26 +524,27 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     y_pos = y_col_izq if columna == 0 else y_col_der
                     
                     nom_limpio = limpiar_texto(item['nombre']).upper()
+                    
                     pdf.set_xy(x_pos, y_pos)
                     pdf.set_font("Arial", 'B', 8)
-                    pdf.cell(60, 4, nom_limpio[:45])
-                    y_pos += 4 
+                    pdf.multi_cell(60, 4, nom_limpio, align='L')
+                    y_pos = pdf.get_y() 
                     
                     if tipo_modulo == "entreno":
-                        pdf.set_xy(x_pos, y_pos)
-                        pdf.set_font("Arial", 'I', 7.5)
                         texto_detalle = f"{limpiar_texto(item['s'])} SETS | {limpiar_texto(item['r'])} REPS | {limpiar_texto(item['seg'])} SEG"
                         if item.get('peso (kg)') and str(item.get('peso (kg)')) != "0":
                             texto_detalle += f" | {limpiar_texto(item['peso (kg)'])} KG"
-                        pdf.cell(60, 4, texto_detalle)
-                        y_pos += 8 
+                        
+                        pdf.set_xy(x_pos, y_pos)
+                        pdf.set_font("Arial", 'I', 7.5)
+                        pdf.multi_cell(60, 4, texto_detalle, align='L')
+                        y_pos = pdf.get_y() + 4
                     else: 
+                        det_limpio = limpiar_texto(item['detalle'])
                         pdf.set_xy(x_pos, y_pos)
                         pdf.set_font("Arial", '', 7.5)
-                        det_limpio = limpiar_texto(item['detalle'])
-                        pdf.multi_cell(62, 3.5, det_limpio) 
-                        altura_real = pdf.get_y() - y_pos
-                        y_pos += altura_real + 4
+                        pdf.multi_cell(60, 3.5, det_limpio, align='L')
+                        y_pos = pdf.get_y() + 4
                     
                     if columna == 0: y_col_izq = y_pos
                     else: y_col_der = y_pos
@@ -374,21 +582,24 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 
     return pdf.output(dest='S')
 
-# --- INTERFAZ DE USUARIO ---
-st.set_page_config(page_title="Coach System Pro", layout="wide")
 
-# Diccionario de colores para la VISTA PREVIA (Simulación visual)
+# --- INTERFAZ DE USUARIO ---
 preview_colors = {
-    "Urban Power": {"bg": "#f8e71c", "text": "#000000", "accent": "#000000", "box": "#ffffff", "border": "none"}, # Amarillo intenso
+    "Urban Power": {"bg": "#f8e71c", "text": "#000000", "accent": "#000000", "box": "#ffffff", "border": "none"},
     "Clean Minimal": {"bg": "#ffffff", "text": "#000000", "accent": "#000000", "box": "#ffffff", "border": "1px solid #000000"},
-    "Dark Elite": {"bg": "#141414", "text": "#ffffff", "accent": "#c8102e", "box": "#282828", "border": "none"}, # Fibra oscura
-    "Ocean Fitness": {"bg": "#e0f0ff", "text": "#002040", "accent": "#0069b4", "box": "#f0f8ff", "border": "none"}, # Azul agua
-    "Cyber Neon": {"bg": "#0a0a0f", "text": "#e0ffe0", "accent": "#39ff14", "box": "#1a1a25", "border": "1px solid #39ff14"}, # Neon tech
-    "Eco Wellness": {"bg": "#f4f8f4", "text": "#2e4a2e", "accent": "#64a33c", "box": "#ffffff", "border": "1px solid #c0dcc0"} # Hoja verde
+    "Dark Elite": {"bg": "#141414", "text": "#ffffff", "accent": "#c8102e", "box": "#282828", "border": "none"},
+    "Ocean Fitness": {"bg": "#e0f0ff", "text": "#002040", "accent": "#0069b4", "box": "#f0f8ff", "border": "none"},
+    "Cyber Neon": {"bg": "#0a0a0f", "text": "#e0ffe0", "accent": "#39ff14", "box": "#1a1a25", "border": "1px solid #39ff14"},
+    "Eco Wellness": {"bg": "#f4f8f4", "text": "#2e4a2e", "accent": "#64a33c", "box": "#ffffff", "border": "1px solid #c0dcc0"}
 }
 
 # --- PANEL LATERAL ---
 with st.sidebar:
+    if os.path.exists(ARCHIVO_LICENCIA_LOCAL):
+        with open(ARCHIVO_LICENCIA_LOCAL, "r") as f:
+            lic = json.load(f).get("licencia_activa", "")
+        st.success(f"🎟️ **Licencia Activa:** `{lic}`")
+    
     st.header("💾 Seguridad y Respaldos")
     col_g1, col_g2 = st.columns(2)
     if col_g1.button("💾 Guardar Local"):
@@ -421,17 +632,30 @@ with st.sidebar:
     st.divider()
 
     st.header("🎨 Diseño del Documento")
-    # SELECCIÓN SEPARADA DE ESTRUCTURA Y COLOR
     formato_elegido = st.radio("1. Estructura del PDF:", ["Vertical (Bloques)", "Horizontal (Tabla 7 Días)"])
     st.markdown("<br>", unsafe_allow_html=True)
     
     opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon", "Eco Wellness"]
-    estilo_elegido = st.selectbox("2. Tema de Color y Fondo:", opciones_estilos, key="k_estilo")
+    estilo_elegido = st.selectbox("2. Tema de Color:", opciones_estilos, key="k_estilo")
+
+    opciones_fondo = ["Sencillo (Color Sólido)", "Personalizado (Textura/Imagen)"]
+    if estilo_elegido == "Clean Minimal":
+        tipo_fondo_elegido = st.radio("3. Tipo de Fondo:", ["Sencillo (Color Sólido)"], help="Clean Minimal solo usa fondo blanco.")
+    else:
+        tipo_fondo_elegido = st.radio("3. Tipo de Fondo:", opciones_fondo)
+        
+        if tipo_fondo_elegido == "Personalizado (Textura/Imagen)":
+            archivo_esperado = BG_IMAGES.get(estilo_elegido)
+            if archivo_esperado:
+                ruta_completa = os.path.join("img", archivo_esperado)
+                if not os.path.exists(ruta_completa):
+                    st.warning(f"⚠️ ¡Falta la imagen de fondo!\n\nGuarda la imagen: 👉 `{archivo_esperado}` dentro de la carpeta `img`")
+                else:
+                    st.success(f"✅ ¡Fondo `{archivo_esperado}` detectado!")
 
     st.write("**Vista Previa (Aproximada):**")
     estilo_css = preview_colors[estilo_elegido]
     
-    # Lógica de color de texto para la vista previa
     if estilo_elegido == "Clean Minimal":
          c_txt_dia = "#000000" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["text"]
          bg_dia = "#ffffff" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["accent"]
@@ -474,7 +698,6 @@ with st.sidebar:
         """
     st.markdown(html_preview, unsafe_allow_html=True)
 
-st.title("🏋️‍♂️ Sistema de Planes Personalizados")
 
 # --- DATOS DEL USUARIO ---
 st.subheader("👤 Datos del Usuario")
@@ -544,7 +767,7 @@ if st.button("🚀 GENERAR PDF PROFESIONAL", use_container_width=True):
         
         pdf_bytes = generar_pdf_profesional(
             datos_rutina, datos_nutricion, texto_consejos, configuracion, 
-            datos_cliente, logo_subido, estilo_elegido, formato_elegido,
+            datos_cliente, logo_subido, estilo_elegido, formato_elegido, tipo_fondo_elegido,
             inc_entreno, inc_nutri, inc_consejos
         )
         
