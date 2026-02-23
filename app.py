@@ -11,7 +11,7 @@ import uuid
 # ==========================================
 # CONFIGURACIÓN DE PÁGINA (Debe ir primero)
 # ==========================================
-st.set_page_config(page_title="Coach System Pro", layout="wide")
+st.set_page_config(page_title="Coach System Pro", layout="wide", page_icon="img/favicon.ico" if os.path.exists("img/favicon.ico") else "🏆")
 
 # ==========================================
 # 🔒 SISTEMA DE LICENCIAS Y SEGURIDAD (V3)
@@ -21,7 +21,6 @@ ARCHIVO_LICENCIA_LOCAL = "licencia_guardada.json"
 ARCHIVO_DEVICE_ID = "dispositivo_id.json"
 
 def obtener_device_id():
-    """Genera y guarda una huella digital única para esta computadora."""
     if os.path.exists(ARCHIVO_DEVICE_ID):
         try:
             with open(ARCHIVO_DEVICE_ID, "r", encoding="utf-8") as f:
@@ -37,6 +36,7 @@ def cargar_licencias_validas():
     if not os.path.exists(ARCHIVO_MASTER_LICENCIAS):
         licencias_ejemplo = {
             "ADMIN12345": [],
+            "LAURAFIT96": [],
             "CLIENTE001": [],
             "FITNESS999": []
         }
@@ -70,7 +70,6 @@ def activar_licencia_local(codigo):
     with open(ARCHIVO_LICENCIA_LOCAL, "w", encoding="utf-8") as f:
         json.dump({"licencia_activa": codigo}, f, indent=4)
 
-# --- EJECUCIÓN DEL BLOQUEO ---
 mi_device_id = obtener_device_id()
 licencias_validas = cargar_licencias_validas()
 acceso_concedido = verificar_licencia_activa(licencias_validas, mi_device_id)
@@ -90,51 +89,24 @@ if not acceso_concedido:
                 dispositivos_registrados = licencias_validas[codigo_ingresado]
                 
                 if mi_device_id in dispositivos_registrados or len(dispositivos_registrados) < 3:
-                    
-                    # 🏋️‍♂️ NUEVA ANIMACIÓN PREMIUM (3 SEGUNDOS)
                     animacion_placeholder = st.empty()
                     with animacion_placeholder.container():
                         st.markdown("""
                         <style>
-                            .spinner-container {
-                                position: relative;
-                                width: 100px;
-                                height: 100px;
-                                margin: 0 auto;
-                            }
-                            .spinner-ring {
-                                position: absolute;
-                                width: 100%;
-                                height: 100%;
-                                border-radius: 50%;
-                                border: 5px solid rgba(76, 175, 80, 0.2);
-                                border-top-color: #4CAF50;
-                                border-left-color: #4CAF50;
-                                animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-                            }
-                            .spinner-icon {
-                                position: absolute;
-                                top: 50%;
-                                left: 50%;
-                                transform: translate(-50%, -50%);
-                                font-size: 45px;
-                                filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.2));
-                                animation: pulse 1.5s ease-in-out infinite;
-                            }
+                            .spinner-container { position: relative; width: 100px; height: 100px; margin: 0 auto; }
+                            .spinner-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 5px solid rgba(76, 175, 80, 0.2); border-top-color: #4CAF50; border-left-color: #4CAF50; animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite; }
+                            .spinner-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 45px; filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.2)); animation: pulse 1.5s ease-in-out infinite; }
                             @keyframes spin { 100% { transform: rotate(360deg); } }
                             @keyframes pulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.15); } }
                         </style>
                         <div style="text-align: center; height: 300px; display: flex; flex-direction: column; justify-content: center;">
-                            <div class="spinner-container">
-                                <div class="spinner-ring"></div>
-                                <div class="spinner-icon">🏋️</div>
-                            </div>
+                            <div class="spinner-container"><div class="spinner-ring"></div><div class="spinner-icon">🏋️</div></div>
                             <h3 style="color: #4CAF50; margin-top: 25px;">Licencia Validada</h3>
                             <p style="font-family: monospace; color: #666; font-size: 14px;">Iniciando entorno premium...</p>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    time.sleep(3) # REDUCIDO A 3 SEGUNDOS
+                    time.sleep(3) 
                     animacion_placeholder.empty() 
                     
                     if mi_device_id not in dispositivos_registrados:
@@ -149,7 +121,6 @@ if not acceso_concedido:
                 st.warning("Por favor, ingresa un código.")
             else:
                 st.error("❌ Código inválido. Verifica el código o contacta a tu distribuidor.")
-    
     st.stop() 
 
 
@@ -178,38 +149,24 @@ def calcular_altura_multicell(pdf_obj, texto, ancho, alto_linea):
         lineas_totales += 1
     return lineas_totales * alto_linea
 
-# --- NUEVO: OPTIMIZADOR HD PARA IMÁGENES DE FONDO ---
 def optimizar_fondo_hd(ruta_imagen, pdf_w, pdf_h):
-    """
-    Recorta y reescala la imagen de fondo para que coincida exactamente 
-    con las proporciones del PDF, evitando que se vea estirada o pixelada.
-    """
     try:
-        # Aumentamos la resolución para calidad de impresión (300dpi aprox)
-        # 1 mm = 11.81 píxeles
         target_w = int(pdf_w * 11.81)
         target_h = int(pdf_h * 11.81)
-        
         img = Image.open(ruta_imagen).convert("RGB")
         img_ratio = img.width / img.height
         target_ratio = target_w / target_h
         
-        # Recorte (Crop) inteligente para no aplastar la imagen
         if img_ratio > target_ratio:
-            # La imagen es muy ancha, cortamos los lados
             new_w = int(img.height * target_ratio)
             left = (img.width - new_w) // 2
             img = img.crop((left, 0, left + new_w, img.height))
         else:
-            # La imagen es muy alta, cortamos arriba y abajo
             new_h = int(img.width / target_ratio)
             top = (img.height - new_h) // 2
             img = img.crop((0, top, img.width, top + new_h))
             
-        # Reescalado en alta definición (LANCZOS)
         img = img.resize((target_w, target_h), getattr(Image, 'Resampling', Image).LANCZOS)
-        
-        # Guardado temporal
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         img.save(tmp.name, format="JPEG", quality=95)
         return tmp.name
@@ -277,18 +234,16 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 
     def dibujar_fondo_y_cabecera(titulo_pagina):
         pdf.add_page()
-
         fondo_dibujado = False
         if usar_textura and bg_filename:
             ruta_imagen = os.path.join("img", bg_filename)
             if os.path.exists(ruta_imagen):
-                # Aplicar la nueva función HD
                 fondo_hd = optimizar_fondo_hd(ruta_imagen, pdf.w, pdf.h)
                 if fondo_hd:
                     try:
                         pdf.image(fondo_hd, x=0, y=0, w=pdf.w, h=pdf.h)
                         fondo_dibujado = True
-                        os.remove(fondo_hd) # Limpiar el temporal para no saturar el PC
+                        os.remove(fondo_hd) 
                     except Exception:
                         pass
         
@@ -333,7 +288,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             
         pdf.set_xy(15, y_cliente + 2)
         pdf.set_font("Arial", 'B', 8)
-        
         info_c = f"USUARIO: {limpiar_texto(cliente['nombre']).upper()}  |  EDAD: {limpiar_texto(cliente['edad'])}  |  PESO: {limpiar_texto(cliente['peso'])}  |  ALTURA: {limpiar_texto(cliente['altura'])}"
         pdf.cell(caja_w, 4, info_c, align='C')
         return pdf.get_y() + 8
@@ -357,30 +311,47 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
         dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
         
+        # =========================================================
+        # ESTRUCTURA HORIZONTAL (TABLA 7 DÍAS)
+        # =========================================================
         if formato == "Horizontal (Tabla 7 Días)":
             caja_w = obtener_ancho_caja()
             col_w = caja_w / 7 
             
-            pdf.set_fill_color(*c_acento)
-            if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]:
-                 pdf.set_text_color(0, 0, 0)
-            else:
-                 pdf.set_text_color(255, 255, 255)
+            def dibujar_cabecera_horizontal(y_pos):
+                pdf.set_fill_color(*c_acento)
+                if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0, 0, 0)
+                else: pdf.set_text_color(255, 255, 255)
 
-            if estilo == "Clean Minimal": pdf.set_draw_color(0, 0, 0)
-            elif estilo == "Cyber Neon": pdf.set_draw_color(*c_acento)
-            else: pdf.set_draw_color(200, 200, 200)
+                if estilo == "Clean Minimal": pdf.set_draw_color(0, 0, 0)
+                elif estilo == "Cyber Neon": pdf.set_draw_color(*c_acento)
+                else: pdf.set_draw_color(200, 200, 200)
 
-            pdf.set_font("Arial", 'B', 9)
-            pdf.set_xy(15, y_offset)
-            for dia in dias:
-                pdf.cell(col_w, 8, dia.upper(), border=1, fill=True, align='C')
-            pdf.ln(8)
-            y_offset = pdf.get_y()
+                x_s = 15
+                for d in dias:
+                    pdf.rect(x_s, y_pos, col_w, 10, 'DF')
+                    enf = datos_dict.get(d, {}).get("enfoque", "")
+                    
+                    if enf and tipo_modulo == "entreno":
+                        pdf.set_font("Arial", 'B', 8)
+                        pdf.set_xy(x_s, y_pos + 1.5)
+                        pdf.cell(col_w, 4, d.upper(), align='C')
+                        pdf.set_font("Arial", 'B', 6)
+                        pdf.set_xy(x_s, y_pos + 5.5)
+                        pdf.cell(col_w, 4, limpiar_texto(enf).upper()[:22], align='C')
+                    else:
+                        pdf.set_font("Arial", 'B', 9)
+                        pdf.set_xy(x_s, y_pos + 3)
+                        pdf.cell(col_w, 4, d.upper(), align='C')
+                    x_s += col_w
+                return y_pos + 10
+
+            y_offset = dibujar_cabecera_horizontal(y_offset)
             
             max_items = 0
             for dia in dias:
-                valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
+                items_lista = datos_dict.get(dia, {}).get("items", [])
+                valid_items = [it for it in items_lista if it['nombre']]
                 if len(valid_items) > max_items: max_items = len(valid_items)
             
             pdf.set_text_color(*c_texto)
@@ -388,10 +359,10 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             for i in range(max_items):
                 max_h = 15 
                 for dia in dias:
-                    valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
+                    items_lista = datos_dict.get(dia, {}).get("items", [])
+                    valid_items = [it for it in items_lista if it['nombre']]
                     if i < len(valid_items):
                         item = valid_items[i]
-                        
                         pdf.set_font("Arial", 'B', 7.5)
                         nom_h = calcular_altura_multicell(pdf, limpiar_texto(item['nombre']).upper(), col_w - 2, 3.5)
                         
@@ -412,16 +383,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 if y_offset + max_h > pdf.h - 22:
                     dibujar_pie_pagina()
                     y_offset = dibujar_fondo_y_cabecera(titulo_pagina) + 5
-                    
-                    pdf.set_fill_color(*c_acento)
-                    if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0, 0, 0)
-                    else: pdf.set_text_color(255, 255, 255)
-                    pdf.set_font("Arial", 'B', 9)
-                    pdf.set_xy(15, y_offset)
-                    for dia in dias:
-                        pdf.cell(col_w, 8, dia.upper(), border=1, fill=True, align='C')
-                    pdf.ln(8)
-                    y_offset = pdf.get_y()
+                    y_offset = dibujar_cabecera_horizontal(y_offset)
                     pdf.set_text_color(*c_texto)
 
                 fill_row = True if i % 2 == 0 else False
@@ -435,7 +397,8 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     style_cell = 'D' if estilo == "Clean Minimal" and not fill_row else 'DF'
                     pdf.rect(x_pos, y_offset, col_w, max_h, style_cell)
                     
-                    valid_items = [it for it in datos_dict.get(dia, []) if it['nombre']]
+                    items_lista = datos_dict.get(dia, {}).get("items", [])
+                    valid_items = [it for it in items_lista if it['nombre']]
                     if i < len(valid_items):
                         item = valid_items[i]
                         
@@ -457,16 +420,23 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                             
                 y_offset += max_h
 
+        # =========================================================
+        # ESTRUCTURA VERTICAL (BLOQUES)
+        # =========================================================
         else:
             for dia in dias:
-                items = datos_dict.get(dia, [])
-                if not any(item['nombre'] for item in items): continue 
+                data_dia = datos_dict.get(dia, {"enfoque": "", "items": []})
+                items = data_dia.get("items", [])
+                enfoque = data_dia.get("enfoque", "")
+                
+                valid_items = [it for it in items if it['nombre']]
+                
+                if not valid_items and not enfoque: continue 
                 
                 alturas_col_izq, alturas_col_der = [], []
+                mitad = math.ceil(len(valid_items) / 2)
                 
-                for idx, item in enumerate(items):
-                    if not item['nombre']: continue
-                    
+                for idx, item in enumerate(valid_items):
                     nom_limpio = limpiar_texto(item['nombre']).upper()
                     pdf.set_font("Arial", 'B', 8)
                     nom_h = calcular_altura_multicell(pdf, nom_limpio, 60, 4)
@@ -483,7 +453,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                         det_h = calcular_altura_multicell(pdf, det_limpio, 60, 3.5)
                     
                     h_item = nom_h + det_h
-                    if idx < 3: alturas_col_izq.append(h_item)
+                    if idx < mitad: alturas_col_izq.append(h_item)
                     else: alturas_col_der.append(h_item)
                 
                 alto_izq = sum(alturas_col_izq) + (len(alturas_col_izq) * 4) 
@@ -504,7 +474,8 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     pdf.set_fill_color(*c_caja)
                     pdf.rect(60, y_offset, 135, altura_caja, 'F')
 
-                pdf.set_xy(15, y_offset + (altura_caja/2) - 2.5)
+                y_cabecera = y_offset + (altura_caja/2) - (4 if enfoque and tipo_modulo == "entreno" else 2.5)
+                pdf.set_xy(15, y_cabecera)
                 pdf.set_font("Arial", 'B', 11)
                 
                 if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0,0,0)
@@ -512,14 +483,18 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     
                 pdf.cell(40, 5, dia.upper(), align='C')
 
+                if enfoque and tipo_modulo == "entreno":
+                    pdf.set_font("Arial", 'B', 7)
+                    pdf.set_xy(16, pdf.get_y() + 4)
+                    pdf.multi_cell(38, 3.5, limpiar_texto(enfoque).upper()[:40], align='C')
+
                 pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
                 
                 y_col_izq = y_offset + 3
                 y_col_der = y_offset + 3
                 
-                for idx, item in enumerate(items):
-                    if not item['nombre']: continue
-                    columna = idx // 3 
+                for idx, item in enumerate(valid_items):
+                    columna = 0 if idx < mitad else 1 
                     x_pos = 63 + (columna * 65) 
                     y_pos = y_col_izq if columna == 0 else y_col_der
                     
@@ -556,22 +531,77 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     if inc_entreno: procesar_modulo("PLAN DE ENTRENAMIENTO", datos_rutina, "entreno")
     if inc_nutri: procesar_modulo("PLAN DE ALIMENTACIÓN", datos_nutricion, "nutri")
     
+    # =========================================================
+    # NUEVO: CAJA DE CONSEJOS CON PAGINACIÓN INTELIGENTE
+    # =========================================================
     if inc_consejos and consejos.strip():
         y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES") + 10
         caja_w = obtener_ancho_caja()
+        texto_limpio = limpiar_texto(consejos)
         
-        if estilo == "Clean Minimal":
-            pdf.set_draw_color(0, 0, 0)
-            pdf.rect(15, y_offset, caja_w, pdf.h - y_offset - 25, 'D')
-            pdf.set_text_color(50,50,50)
-        else:
-            pdf.set_fill_color(*c_caja)
-            pdf.rect(15, y_offset, caja_w, pdf.h - y_offset - 25, 'F')
-            pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
-            
-        pdf.set_xy(20, y_offset + 5)
         pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(caja_w - 10, 6, limpiar_texto(consejos))
+        alto_linea = 5.0
+        
+        # 1. Separar el texto en líneas físicas que quepan perfectamente en la caja
+        lineas_reales = []
+        for parrafo in texto_limpio.split('\n'):
+            palabras = parrafo.split(' ')
+            linea_actual = ""
+            for palabra in palabras:
+                prueba = palabra if linea_actual == "" else linea_actual + " " + palabra
+                if pdf.get_string_width(prueba) > (caja_w - 12) and linea_actual != "":
+                    lineas_reales.append(linea_actual)
+                    linea_actual = palabra
+                else:
+                    linea_actual = prueba
+            lineas_reales.append(linea_actual)
+            
+        # 2. Agrupar las líneas en diferentes "Páginas" si exceden el límite
+        paginas_de_texto = []
+        lineas_pagina_actual = []
+        y_simulado = y_offset + 5
+        
+        # Estimación segura de dónde empieza el texto en las siguientes páginas
+        y_offset_siguiente = 55 
+        
+        for linea in lineas_reales:
+            # Límite: 30 unidades de margen inferior de seguridad para no tocar el pie de página
+            if y_simulado + alto_linea > (pdf.h - 30): 
+                paginas_de_texto.append(lineas_pagina_actual)
+                lineas_pagina_actual = [linea]
+                y_simulado = y_offset_siguiente + 5 + alto_linea
+            else:
+                lineas_pagina_actual.append(linea)
+                y_simulado += alto_linea
+                
+        if lineas_pagina_actual:
+            paginas_de_texto.append(lineas_pagina_actual)
+            
+        # 3. Dibujar e imprimir página por página
+        for i, pagina in enumerate(paginas_de_texto):
+            # Si hay más de una página, cerramos la actual y abrimos otra
+            if i > 0:
+                dibujar_pie_pagina()
+                y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES (Cont.)") + 10
+                
+            altura_caja = (len(pagina) * alto_linea) + 10
+            
+            # Dibujar el fondo de la caja
+            if estilo == "Clean Minimal":
+                pdf.set_draw_color(0, 0, 0)
+                pdf.rect(15, y_offset, caja_w, altura_caja, 'D')
+                pdf.set_text_color(50, 50, 50)
+            else:
+                pdf.set_fill_color(*c_caja)
+                pdf.rect(15, y_offset, caja_w, altura_caja, 'F')
+                pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
+                
+            # Escribir las líneas de texto dentro de la caja actual
+            pdf.set_xy(20, y_offset + 5)
+            for linea in pagina:
+                pdf.cell(caja_w - 10, alto_linea, linea, ln=True)
+                pdf.set_x(20) # Regresa el cursor al margen izquierdo de la caja
+                
         dibujar_pie_pagina()
 
     if not inc_entreno and not inc_nutri and not inc_consejos:
@@ -669,11 +699,12 @@ with st.sidebar:
         html_preview = f"""
         <div style="background-color: {estilo_css['bg']}; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif;">
             <div style="display: flex; height: 60px;">
-                <div style="background-color: {bg_dia}; width: 30%; display: flex; align-items: center; justify-content: center; border: {border_dia}; border-right: none;">
-                    <b style="color: {c_txt_dia}; font-size: 14px;">LUNES</b>
+                <div style="background-color: {bg_dia}; width: 30%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: {border_dia}; border-right: none;">
+                    <b style="color: {c_txt_dia}; font-size: 14px; margin-bottom: 2px;">LUNES</b>
+                    <span style="color: {c_txt_dia}; font-size: 9px; opacity: 0.8;">PIERNA - CUÁDRICEPS</span>
                 </div>
                 <div style="background-color: {estilo_css['box']}; width: 70%; padding: 8px; border: {border_dia}; border-left: none;">
-                    <div style="color: {estilo_css['text']}; font-size: 11px; font-weight: bold;">PRESS DE BANCA</div>
+                    <div style="color: {estilo_css['text']}; font-size: 11px; font-weight: bold;">SENTADILLAS</div>
                     <div style="color: {estilo_css['text']}; font-size: 10px; font-style: italic; opacity: 0.8;">4 SETS | 12 REPS</div>
                 </div>
             </div>
@@ -684,14 +715,14 @@ with st.sidebar:
         <div style="background-color: {estilo_css['bg']}; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif; overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 9px;">
                 <tr style="background-color: {bg_dia}; color: {c_txt_dia}; font-weight: bold;">
-                    <td style="border: {border_dia}; padding: 5px;">LUNES</td>
-                    <td style="border: {border_dia}; padding: 5px;">MARTES</td>
-                    <td style="border: {border_dia}; padding: 5px;">MIERCOLES</td>
+                    <td style="border: {border_dia}; padding: 5px;">LUNES<br><span style="font-size:7px; font-weight:normal;">PIERNA</span></td>
+                    <td style="border: {border_dia}; padding: 5px;">MARTES<br><span style="font-size:7px; font-weight:normal;">EMPUJE</span></td>
+                    <td style="border: {border_dia}; padding: 5px;">MIERCOLES<br><span style="font-size:7px; font-weight:normal;">DESCANSO</span></td>
                 </tr>
                 <tr style="background-color: {estilo_css['box']}; color: {estilo_css['text']};">
-                    <td style="border: {border_dia}; padding: 5px;"><b>PRESS</b><br>4S | 12R</td>
-                    <td style="border: {border_dia}; padding: 5px;"><b>SENTAD.</b><br>4S | 10R</td>
-                    <td style="border: {border_dia}; padding: 5px;"><b>DESC.</b><br>Recup.</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>SENTAD.</b><br>4S | 12R</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>PRESS</b><br>4S | 10R</td>
+                    <td style="border: {border_dia}; padding: 5px;"><b>CARDIO</b><br>Recup.</td>
                 </tr>
             </table>
         </div>
@@ -717,7 +748,8 @@ with tab1:
     datos_rutina = {}
     for dia in dias_semana:
         with st.expander(f"Rutina del {dia}", expanded=False):
-            n_ej = st.number_input(f"Cantidad ejercicios {dia} (Máx 6)", 1, 6, 4, key=f"ne_{dia}")
+            enfoque_dia = st.text_input("💪 Músculo o Enfoque del Día (Ej: Pierna - Cuádriceps)", key=f"enf_{dia}")
+            n_ej = st.number_input(f"Cantidad ejercicios {dia} (Máx 9)", 1, 9, 4, key=f"ne_{dia}")
             lista_ej = []
             for i in range(n_ej):
                 col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
@@ -727,20 +759,22 @@ with tab1:
                 seg = col4.text_input("Seg", "60", key=f"g_{dia}_{i}")
                 p = col5.text_input("Peso (kg)", "0", key=f"p_{dia}_{i}")
                 lista_ej.append({"nombre": nombre, "s": s, "r": r, "seg": seg, "peso (kg)": p})
-            datos_rutina[dia] = lista_ej
+            
+            datos_rutina[dia] = {"enfoque": enfoque_dia, "items": lista_ej}
 
 with tab2:
     datos_nutricion = {}
     for dia in dias_semana:
         with st.expander(f"Comidas del {dia}", expanded=False):
-            n_comidas = st.number_input(f"Cantidad comidas {dia} (Máx 6)", 1, 6, 4, key=f"nc_{dia}")
+            n_comidas = st.number_input(f"Cantidad comidas {dia} (Máx 9)", 1, 9, 4, key=f"nc_{dia}")
             lista_comidas = []
             for i in range(n_comidas):
                 col1, col2 = st.columns([1, 3])
                 tipo = col1.text_input("Comida (Ej: Desayuno...)", key=f"t_{dia}_{i}")
                 detalle = col2.text_input("Alimentos (Ej: 2 huevos...)", key=f"d_{dia}_{i}")
                 lista_comidas.append({"nombre": tipo, "detalle": detalle})
-            datos_nutricion[dia] = lista_comidas
+            
+            datos_nutricion[dia] = {"enfoque": "", "items": lista_comidas}
 
 with tab3:
     st.info("Escribe aquí todas las indicaciones extra: cantidad de agua, descanso, uso de suplementos, etc.")
