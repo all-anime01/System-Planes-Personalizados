@@ -582,7 +582,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             # Si hay más de una página, cerramos la actual y abrimos otra
             if i > 0:
                 dibujar_pie_pagina()
-                y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES (Cont.)") + 10
+                y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES") + 10
                 
             altura_caja = (len(pagina) * alto_linea) + 10
             
