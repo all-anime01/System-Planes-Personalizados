@@ -9,12 +9,16 @@ import time
 import uuid
 
 # ==========================================
-# CONFIGURACIÓN DE PÁGINA (Debe ir primero)
+# CONFIGURACIÓN DE PÁGINA
 # ==========================================
-st.set_page_config(page_title="Coach System Pro", layout="wide", page_icon="img/favicon.ico" if os.path.exists("img/favicon.ico") else "🏆")
+st.set_page_config(
+    page_title="Coach System Pro", 
+    layout="wide", 
+    page_icon="img/favicon.ico" if os.path.exists("img/favicon.ico") else "🏆"
+)
 
 # ==========================================
-# 🔒 SISTEMA DE LICENCIAS Y SEGURIDAD (V3)
+# 🔒 SISTEMA DE LICENCIAS Y SEGURIDAD
 # ==========================================
 ARCHIVO_MASTER_LICENCIAS = "licencias_master.json"
 ARCHIVO_LICENCIA_LOCAL = "licencia_guardada.json"
@@ -34,12 +38,7 @@ def obtener_device_id():
 
 def cargar_licencias_validas():
     if not os.path.exists(ARCHIVO_MASTER_LICENCIAS):
-        licencias_ejemplo = {
-            "ADMIN12345": [],
-            "LAURAFIT96": [],
-            "CLIENTE001": [],
-            "FITNESS999": []
-        }
+        licencias_ejemplo = {"ADMIN12345": [], "CLIENTE001": [], "FITNESS999": [], "LauFIT96":[]}
         with open(ARCHIVO_MASTER_LICENCIAS, "w", encoding="utf-8") as f:
             json.dump(licencias_ejemplo, f, indent=4)
     
@@ -77,17 +76,13 @@ acceso_concedido = verificar_licencia_activa(licencias_validas, mi_device_id)
 if not acceso_concedido:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
         st.error("🔒 **SISTEMA BLOQUEADO - SE REQUIERE LICENCIA**")
         st.write("Bienvenido a **Coach System Pro**. Por favor ingresa tu código de acceso (10 dígitos). *Nota: Esta licencia es válida para un máximo de 3 dispositivos.*")
-        
         codigo_ingresado = st.text_input("🔑 Código de Licencia:", max_chars=10, type="password")
-        
         if st.button("🚀 ACTIVAR PROGRAMA", use_container_width=True):
             if codigo_ingresado in licencias_validas:
                 dispositivos_registrados = licencias_validas[codigo_ingresado]
-                
                 if mi_device_id in dispositivos_registrados or len(dispositivos_registrados) < 3:
                     animacion_placeholder = st.empty()
                     with animacion_placeholder.container():
@@ -105,14 +100,11 @@ if not acceso_concedido:
                             <p style="font-family: monospace; color: #666; font-size: 14px;">Iniciando entorno premium...</p>
                         </div>
                         """, unsafe_allow_html=True)
-                    
                     time.sleep(3) 
                     animacion_placeholder.empty() 
-                    
                     if mi_device_id not in dispositivos_registrados:
                         licencias_validas[codigo_ingresado].append(mi_device_id)
                         guardar_licencias_master(licencias_validas)
-                        
                     activar_licencia_local(codigo_ingresado)
                     st.rerun() 
                 else:
@@ -132,21 +124,31 @@ def limpiar_texto(texto):
     if not texto: return ""
     return str(texto).encode('latin-1', 'ignore').decode('latin-1')
 
-def calcular_altura_multicell(pdf_obj, texto, ancho, alto_linea):
+# --- 🚀 NUEVO MOTOR MATEMÁTICO ANTI-CORTES ---
+def calcular_altura_multicell(pdf_obj, texto, ancho_multicell, alto_linea):
     if not texto: return 0
+    # Obtenemos el margen interno real de la librería (suele ser 1mm por lado)
+    c_margin = getattr(pdf_obj, 'c_margin', 1.0)
+    # Calculamos el ancho EXACTO donde el texto se quiebra
+    ancho_real = ancho_multicell - (2 * c_margin) - 0.5 
+    
     lineas_totales = 0
-    ancho_seguro = ancho - 0.5 
     for parrafo in str(texto).split('\n'):
         palabras = parrafo.split(' ')
         linea_actual = ""
         for palabra in palabras:
             prueba = palabra if linea_actual == "" else linea_actual + " " + palabra
-            if pdf_obj.get_string_width(prueba) > ancho_seguro and linea_actual != "":
-                lineas_totales += 1
-                linea_actual = palabra
+            if pdf_obj.get_string_width(prueba) > ancho_real:
+                if linea_actual != "":
+                    lineas_totales += 1
+                    linea_actual = palabra
+                else:
+                    lineas_totales += max(1, int(pdf_obj.get_string_width(palabra) / ancho_real))
+                    linea_actual = ""
             else:
                 linea_actual = prueba
-        lineas_totales += 1
+        if linea_actual != "":
+            lineas_totales += 1
     return lineas_totales * alto_linea
 
 def optimizar_fondo_hd(ruta_imagen, pdf_w, pdf_h):
@@ -312,7 +314,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
         
         # =========================================================
-        # ESTRUCTURA HORIZONTAL (TABLA 7 DÍAS)
+        # ESTRUCTURA HORIZONTAL (TABLA 7 DÍAS) - ACTUALIZADA
         # =========================================================
         if formato == "Horizontal (Tabla 7 Días)":
             caja_w = obtener_ancho_caja()
@@ -334,11 +336,12 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     
                     if enf and tipo_modulo == "entreno":
                         pdf.set_font("Arial", 'B', 8)
-                        pdf.set_xy(x_s, y_pos + 1.5)
+                        pdf.set_xy(x_s, y_pos + 1)
                         pdf.cell(col_w, 4, d.upper(), align='C')
-                        pdf.set_font("Arial", 'B', 6)
-                        pdf.set_xy(x_s, y_pos + 5.5)
-                        pdf.cell(col_w, 4, limpiar_texto(enf).upper()[:22], align='C')
+                        
+                        pdf.set_font("Arial", 'B', 5.5)
+                        pdf.set_xy(x_s + 0.5, y_pos + 4.5)
+                        pdf.multi_cell(col_w - 1, 2.5, limpiar_texto(enf).upper()[:50], align='C')
                     else:
                         pdf.set_font("Arial", 'B', 9)
                         pdf.set_xy(x_s, y_pos + 3)
@@ -357,28 +360,43 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             pdf.set_text_color(*c_texto)
 
             for i in range(max_items):
-                max_h = 15 
+                max_h = 16 
+                alturas_celdas = {} 
+                
+                # --- PASO 1: Calcular la altura máxima exacta (Con Acolchado) ---
                 for dia in dias:
                     items_lista = datos_dict.get(dia, {}).get("items", [])
                     valid_items = [it for it in items_lista if it['nombre']]
                     if i < len(valid_items):
                         item = valid_items[i]
+                        
+                        nom_limpio = limpiar_texto(item['nombre']).upper()
                         pdf.set_font("Arial", 'B', 7.5)
-                        nom_h = calcular_altura_multicell(pdf, limpiar_texto(item['nombre']).upper(), col_w - 2, 3.5)
+                        nom_h = calcular_altura_multicell(pdf, nom_limpio, col_w - 2, 3.5)
                         
                         if tipo_modulo == "entreno":
                             det = f"{limpiar_texto(item['s'])}S | {limpiar_texto(item['r'])}R | {limpiar_texto(item['seg'])}s"
                             if item.get('peso (kg)') and str(item.get('peso (kg)')) != "0":
                                 det += f"\n{limpiar_texto(item['peso (kg)'])} KG"
-                            pdf.set_font("Arial", '', 7)
-                            det_h = calcular_altura_multicell(pdf, det, col_w - 2, 3.5)
                         else:
                             det = limpiar_texto(item['detalle'])
-                            pdf.set_font("Arial", '', 7)
-                            det_h = calcular_altura_multicell(pdf, det, col_w - 2, 3.5)
+                            
+                        pdf.set_font("Arial", '', 7)
+                        det_h = calcular_altura_multicell(pdf, det, col_w - 2, 3.5)
                         
-                        h_total = nom_h + det_h + 8 
-                        if h_total > max_h: max_h = h_total
+                        h_total_item = nom_h + det_h + 1.5 
+                        
+                        alturas_celdas[dia] = {
+                            "nom_h": nom_h,
+                            "det_h": det_h,
+                            "h_total": h_total_item,
+                            "nom": nom_limpio,
+                            "det": det
+                        }
+                        
+                        # Agregamos 10mm de padding generoso a la altura total (5 arriba y 5 abajo)
+                        if h_total_item + 10 > max_h: 
+                            max_h = h_total_item + 10
                 
                 if y_offset + max_h > pdf.h - 22:
                     dibujar_pie_pagina()
@@ -386,6 +404,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     y_offset = dibujar_cabecera_horizontal(y_offset)
                     pdf.set_text_color(*c_texto)
 
+                # --- PASO 2: Dibujar las cajas y Auto-Centrar Verticalmente ---
                 fill_row = True if i % 2 == 0 else False
                 if estilo == "Clean Minimal":
                     pdf.set_fill_color(245,245,245) if fill_row else pdf.set_fill_color(255,255,255)
@@ -395,28 +414,22 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 for col_idx, dia in enumerate(dias):
                     x_pos = 15 + (col_idx * col_w)
                     style_cell = 'D' if estilo == "Clean Minimal" and not fill_row else 'DF'
+                    
                     pdf.rect(x_pos, y_offset, col_w, max_h, style_cell)
                     
-                    items_lista = datos_dict.get(dia, {}).get("items", [])
-                    valid_items = [it for it in items_lista if it['nombre']]
-                    if i < len(valid_items):
-                        item = valid_items[i]
+                    if dia in alturas_celdas:
+                        cell_data = alturas_celdas[dia]
                         
-                        pdf.set_xy(x_pos + 1, y_offset + 2)
+                        y_start = y_offset + (max_h - cell_data["h_total"]) / 2
+                        
+                        pdf.set_xy(x_pos + 1, y_start)
                         pdf.set_font("Arial", 'B', 7.5)
-                        pdf.multi_cell(col_w - 2, 3.5, limpiar_texto(item['nombre']).upper(), align='C')
+                        pdf.multi_cell(col_w - 2, 3.5, cell_data["nom"], align='C')
                         
                         y_det = pdf.get_y()
-                        pdf.set_xy(x_pos + 1, y_det + 1)
+                        pdf.set_xy(x_pos + 1, y_det + 1.5)
                         pdf.set_font("Arial", '', 7)
-                        
-                        if tipo_modulo == "entreno":
-                            det = f"{limpiar_texto(item['s'])}S | {limpiar_texto(item['r'])}R | {limpiar_texto(item['seg'])}s"
-                            if item.get('peso (kg)') and str(item.get('peso (kg)')) != "0":
-                                det += f"\n{limpiar_texto(item['peso (kg)'])} KG"
-                            pdf.multi_cell(col_w - 2, 3.5, det, align='C')
-                        else:
-                            pdf.multi_cell(col_w - 2, 3.5, limpiar_texto(item['detalle']), align='C')
+                        pdf.multi_cell(col_w - 2, 3.5, cell_data["det"], align='C')
                             
                 y_offset += max_h
 
@@ -531,9 +544,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     if inc_entreno: procesar_modulo("PLAN DE ENTRENAMIENTO", datos_rutina, "entreno")
     if inc_nutri: procesar_modulo("PLAN DE ALIMENTACIÓN", datos_nutricion, "nutri")
     
-    # =========================================================
-    # NUEVO: CAJA DE CONSEJOS CON PAGINACIÓN INTELIGENTE
-    # =========================================================
     if inc_consejos and consejos.strip():
         y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES") + 10
         caja_w = obtener_ancho_caja()
@@ -542,7 +552,6 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         pdf.set_font("Arial", '', 10)
         alto_linea = 5.0
         
-        # 1. Separar el texto en líneas físicas que quepan perfectamente en la caja
         lineas_reales = []
         for parrafo in texto_limpio.split('\n'):
             palabras = parrafo.split(' ')
@@ -556,16 +565,12 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     linea_actual = prueba
             lineas_reales.append(linea_actual)
             
-        # 2. Agrupar las líneas en diferentes "Páginas" si exceden el límite
         paginas_de_texto = []
         lineas_pagina_actual = []
         y_simulado = y_offset + 5
-        
-        # Estimación segura de dónde empieza el texto en las siguientes páginas
         y_offset_siguiente = 55 
         
         for linea in lineas_reales:
-            # Límite: 30 unidades de margen inferior de seguridad para no tocar el pie de página
             if y_simulado + alto_linea > (pdf.h - 30): 
                 paginas_de_texto.append(lineas_pagina_actual)
                 lineas_pagina_actual = [linea]
@@ -577,16 +582,13 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         if lineas_pagina_actual:
             paginas_de_texto.append(lineas_pagina_actual)
             
-        # 3. Dibujar e imprimir página por página
         for i, pagina in enumerate(paginas_de_texto):
-            # Si hay más de una página, cerramos la actual y abrimos otra
             if i > 0:
                 dibujar_pie_pagina()
-                y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES") + 10
+                y_offset = dibujar_fondo_y_cabecera("CONSEJOS Y RECOMENDACIONES (Cont.)") + 10
                 
             altura_caja = (len(pagina) * alto_linea) + 10
             
-            # Dibujar el fondo de la caja
             if estilo == "Clean Minimal":
                 pdf.set_draw_color(0, 0, 0)
                 pdf.rect(15, y_offset, caja_w, altura_caja, 'D')
@@ -596,11 +598,10 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 pdf.rect(15, y_offset, caja_w, altura_caja, 'F')
                 pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
                 
-            # Escribir las líneas de texto dentro de la caja actual
             pdf.set_xy(20, y_offset + 5)
             for linea in pagina:
                 pdf.cell(caja_w - 10, alto_linea, linea, ln=True)
-                pdf.set_x(20) # Regresa el cursor al margen izquierdo de la caja
+                pdf.set_x(20) 
                 
         dibujar_pie_pagina()
 
