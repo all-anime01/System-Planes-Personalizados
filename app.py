@@ -526,11 +526,11 @@ BG_IMAGES = {
     "Cyber Neon": "bg_cyber.jpg",
     "Eco Wellness": "bg_eco.jpg",
     "Clean Minimal": None,
-    "Rose Gold": None,
-    "Violet Luxe": None,
-    "Sunset Energy": None,
-    "Steel Pro": None,
-    "Gold Elite": None,
+    "Rose Gold": "bg_rosegold.jpg",
+    "Violet Luxe": "bg_violet.jpg",
+    "Sunset Energy": "bg_sunset.jpg",
+    "Steel Pro": "bg_steel.jpg",
+    "Gold Elite": "bg_gold.jpg",
 }
 
 # Plantillas de fondo oscuro: el texto dentro de las cajas va en claro
@@ -550,11 +550,11 @@ DESCRIPCION_PLANTILLAS = {
     "Ocean Fitness": "Azules claros y frescos. Transmite calma y constancia.",
     "Cyber Neon": "Negro con verde neón. Estética tech y futurista.",
     "Eco Wellness": "Verdes suaves sobre crema. Salud, nutrición y bienestar.",
-    "Rose Gold": "Rosa empolvado sobre crema. Elegante y muy femenina.",
-    "Violet Luxe": "Violeta eléctrico sobre morado profundo. Moderna y premium.",
-    "Sunset Energy": "Naranja atardecer sobre crema cálida. Energía y motivación.",
-    "Steel Pro": "Azul acero sobre gris claro. Sobria, clínica y profesional.",
-    "Gold Elite": "Negro con dorado. La más lujosa del catálogo.",
+    "Rose Gold": "Rosa empolvado sobre crema, con mancuernas de fondo. Elegante y femenina.",
+    "Violet Luxe": "Violeta eléctrico sobre morado profundo, con foco de gimnasio. Moderna y premium.",
+    "Sunset Energy": "Naranja atardecer con líneas de velocidad. Pura energía y motivación.",
+    "Steel Pro": "Azul acero sobre plano técnico. Sobria, analítica y profesional.",
+    "Gold Elite": "Negro con dorado y discos olímpicos. La más lujosa del catálogo.",
 }
 
 def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, tipo_fondo,
