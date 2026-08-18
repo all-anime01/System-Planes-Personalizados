@@ -1,5 +1,6 @@
 import streamlit as st
 from fpdf import FPDF
+import io as _io
 from PIL import Image
 import tempfile
 import os
@@ -151,10 +152,10 @@ def calcular_altura_multicell(pdf_obj, texto, ancho_multicell, alto_linea):
             lineas_totales += 1
     return lineas_totales * alto_linea
 
-def optimizar_fondo_hd(ruta_imagen, pdf_w, pdf_h):
+def optimizar_fondo_hd(ruta_imagen, pdf_w, pdf_h, escala=11.81):
     try:
-        target_w = int(pdf_w * 11.81)
-        target_h = int(pdf_h * 11.81)
+        target_w = int(pdf_w * escala)
+        target_h = int(pdf_h * escala)
         img = Image.open(ruta_imagen).convert("RGB")
         img_ratio = img.width / img.height
         target_ratio = target_w / target_h
@@ -524,13 +525,43 @@ BG_IMAGES = {
     "Ocean Fitness": "bg_ocean.jpg",
     "Cyber Neon": "bg_cyber.jpg",
     "Eco Wellness": "bg_eco.jpg",
-    "Clean Minimal": None 
+    "Clean Minimal": None,
+    "Rose Gold": None,
+    "Violet Luxe": None,
+    "Sunset Energy": None,
+    "Steel Pro": None,
+    "Gold Elite": None,
+}
+
+# Plantillas de fondo oscuro: el texto dentro de las cajas va en claro
+ESTILOS_OSCUROS = ["Dark Elite", "Cyber Neon", "Violet Luxe", "Gold Elite"]
+# Plantillas cuyo color de acento es claro: el texto encima va en negro
+ESTILOS_ACENTO_CLARO = ["Urban Power", "Cyber Neon", "Clean Minimal", "Gold Elite"]
+
+LISTA_PLANTILLAS = [
+    "Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon",
+    "Eco Wellness", "Rose Gold", "Violet Luxe", "Sunset Energy", "Steel Pro", "Gold Elite",
+]
+
+DESCRIPCION_PLANTILLAS = {
+    "Urban Power": "Amarillo y negro, alto impacto. La clásica de gimnasio.",
+    "Clean Minimal": "Blanco y negro, solo líneas. Ideal para imprimir y ahorrar tinta.",
+    "Dark Elite": "Negro con carmesí. Look premium y agresivo.",
+    "Ocean Fitness": "Azules claros y frescos. Transmite calma y constancia.",
+    "Cyber Neon": "Negro con verde neón. Estética tech y futurista.",
+    "Eco Wellness": "Verdes suaves sobre crema. Salud, nutrición y bienestar.",
+    "Rose Gold": "Rosa empolvado sobre crema. Elegante y muy femenina.",
+    "Violet Luxe": "Violeta eléctrico sobre morado profundo. Moderna y premium.",
+    "Sunset Energy": "Naranja atardecer sobre crema cálida. Energía y motivación.",
+    "Steel Pro": "Azul acero sobre gris claro. Sobria, clínica y profesional.",
+    "Gold Elite": "Negro con dorado. La más lujosa del catálogo.",
 }
 
 def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, tipo_fondo,
                             inc_entreno, inc_nutri, inc_consejos,
                             objetivos=None, perfil=None, antiantojos=None,
-                            inc_objetivos=False, inc_composicion=False, inc_antiantojos=False):
+                            inc_objetivos=False, inc_composicion=False, inc_antiantojos=False,
+                            calidad_fondo=11.81):
     objetivos = objetivos or {}
     perfil = perfil or {}
     antiantojos = antiantojos or []
@@ -549,8 +580,18 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         c_bg, c_texto, c_acento, c_caja = (240, 248, 255), (0, 20, 40), (0, 105, 180), (225, 240, 250)
     elif estilo == "Cyber Neon":
         c_bg, c_texto, c_acento, c_caja = (10, 10, 15), (240, 255, 240), (57, 255, 20), (25, 25, 35)
-    elif estilo == "Eco Wellness": 
+    elif estilo == "Eco Wellness":
         c_bg, c_texto, c_acento, c_caja = (248, 253, 248), (40, 60, 40), (100, 180, 60), (240, 250, 240)
+    elif estilo == "Rose Gold":
+        c_bg, c_texto, c_acento, c_caja = (253, 246, 244), (74, 45, 44), (183, 110, 121), (250, 234, 231)
+    elif estilo == "Violet Luxe":
+        c_bg, c_texto, c_acento, c_caja = (24, 18, 35), (238, 233, 248), (139, 92, 246), (43, 33, 60)
+    elif estilo == "Sunset Energy":
+        c_bg, c_texto, c_acento, c_caja = (255, 247, 237), (67, 32, 15), (234, 88, 12), (255, 236, 214)
+    elif estilo == "Steel Pro":
+        c_bg, c_texto, c_acento, c_caja = (237, 241, 245), (24, 34, 45), (45, 72, 99), (255, 255, 255)
+    elif estilo == "Gold Elite":
+        c_bg, c_texto, c_acento, c_caja = (18, 17, 15), (246, 241, 229), (198, 160, 58), (39, 36, 30)
     else: 
         c_bg, c_texto, c_acento, c_caja = (255, 245, 200), (20, 20, 20), (255, 204, 0), (255, 255, 240)
 
@@ -563,7 +604,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         if usar_textura and bg_filename:
             ruta_imagen = os.path.join("img", bg_filename)
             if os.path.exists(ruta_imagen):
-                fondo_hd = optimizar_fondo_hd(ruta_imagen, pdf.w, pdf.h)
+                fondo_hd = optimizar_fondo_hd(ruta_imagen, pdf.w, pdf.h, calidad_fondo)
                 if fondo_hd:
                     try:
                         pdf.image(fondo_hd, x=0, y=0, w=pdf.w, h=pdf.h)
@@ -609,7 +650,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         else:
             pdf.set_fill_color(*c_caja)
             pdf.rect(15, y_cliente, caja_w, 8, 'F')
-            pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(80,90,80) if estilo == "Eco Wellness" else pdf.set_text_color(50,50,50)
+            pdf.set_text_color(220,220,220) if estilo in ESTILOS_OSCUROS else pdf.set_text_color(80,90,80) if estilo == "Eco Wellness" else pdf.set_text_color(50,50,50)
             
         pdf.set_xy(15, y_cliente + 2)
         pdf.set_font("Arial", 'B', 8)
@@ -648,8 +689,11 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             col_w = caja_w / 7 
             
             def dibujar_cabecera_horizontal(y_pos):
-                pdf.set_fill_color(*c_acento)
-                if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0, 0, 0)
+                # Clean Minimal tiene el acento en negro: se rellena en blanco para
+                # que el texto negro de los dias siga siendo legible.
+                if estilo == "Clean Minimal": pdf.set_fill_color(255, 255, 255)
+                else: pdf.set_fill_color(*c_acento)
+                if estilo in ESTILOS_ACENTO_CLARO: pdf.set_text_color(0, 0, 0)
                 else: pdf.set_text_color(255, 255, 255)
 
                 if estilo == "Clean Minimal": pdf.set_draw_color(0, 0, 0)
@@ -814,7 +858,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                 pdf.set_xy(15, y_cabecera)
                 pdf.set_font("Arial", 'B', 11)
                 
-                if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]: pdf.set_text_color(0,0,0)
+                if estilo in ESTILOS_ACENTO_CLARO: pdf.set_text_color(0,0,0)
                 else: pdf.set_text_color(255,255,255) 
                     
                 pdf.cell(40, 5, dia.upper(), align='C')
@@ -824,7 +868,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
                     pdf.set_xy(16, pdf.get_y() + 4)
                     pdf.multi_cell(38, 3.5, limpiar_texto(enfoque).upper()[:40], align='C')
 
-                pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
+                pdf.set_text_color(220,220,220) if estilo in ESTILOS_OSCUROS else pdf.set_text_color(50,50,50)
                 
                 y_col_izq = y_offset + 3
                 y_col_der = y_offset + 3
@@ -866,7 +910,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     # 🧩 RENDER GENÉRICO DE TABLAS Y BLOQUES
     # ==========================================
     def _color_texto_encabezado():
-        if estilo in ["Urban Power", "Cyber Neon", "Clean Minimal"]:
+        if estilo in ESTILOS_ACENTO_CLARO:
             return (0, 0, 0)
         return (255, 255, 255)
 
@@ -882,8 +926,13 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
         if y + espacio_minimo > pdf.h - 22:
             dibujar_pie_pagina()
             y = dibujar_fondo_y_cabecera(titulo_pagina + " (CONT.)") + 5
-        pdf.set_fill_color(*c_acento)
-        pdf.rect(15, y, caja_w, 7, 'F')
+        if estilo == "Clean Minimal":
+            pdf.set_fill_color(255, 255, 255)
+            pdf.set_draw_color(0, 0, 0)
+            pdf.rect(15, y, caja_w, 7, 'DF')
+        else:
+            pdf.set_fill_color(*c_acento)
+            pdf.rect(15, y, caja_w, 7, 'F')
         pdf.set_text_color(*_color_texto_encabezado())
         pdf.set_xy(15, y + 1.5)
         pdf.set_font("Arial", 'B', 9)
@@ -919,7 +968,8 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
 
         def _fila_encabezado(y_pos):
             _preparar_bordes()
-            pdf.set_fill_color(*c_acento)
+            if estilo == "Clean Minimal": pdf.set_fill_color(255, 255, 255)
+            else: pdf.set_fill_color(*c_acento)
             pdf.set_text_color(*_color_texto_encabezado())
             pdf.set_font("Arial", 'B', 7.5)
             x = 15
@@ -1120,7 +1170,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
             else:
                 pdf.set_fill_color(*c_caja)
                 pdf.rect(15, y_offset, caja_w, altura_caja, 'F')
-                pdf.set_text_color(220,220,220) if estilo in ["Dark Elite", "Cyber Neon"] else pdf.set_text_color(50,50,50)
+                pdf.set_text_color(220,220,220) if estilo in ESTILOS_OSCUROS else pdf.set_text_color(50,50,50)
                 
             pdf.set_xy(20, y_offset + 5)
             for linea in pagina:
@@ -1145,8 +1195,200 @@ preview_colors = {
     "Dark Elite": {"bg": "#141414", "text": "#ffffff", "accent": "#c8102e", "box": "#282828", "border": "none"},
     "Ocean Fitness": {"bg": "#e0f0ff", "text": "#002040", "accent": "#0069b4", "box": "#f0f8ff", "border": "none"},
     "Cyber Neon": {"bg": "#0a0a0f", "text": "#e0ffe0", "accent": "#39ff14", "box": "#1a1a25", "border": "1px solid #39ff14"},
-    "Eco Wellness": {"bg": "#f4f8f4", "text": "#2e4a2e", "accent": "#64a33c", "box": "#ffffff", "border": "1px solid #c0dcc0"}
+    "Eco Wellness": {"bg": "#f4f8f4", "text": "#2e4a2e", "accent": "#64a33c", "box": "#ffffff", "border": "1px solid #c0dcc0"},
+    "Rose Gold": {"bg": "#fdf6f4", "text": "#4a2d2c", "accent": "#b76e79", "box": "#faeae7", "border": "1px solid #eed7d2"},
+    "Violet Luxe": {"bg": "#181223", "text": "#eee9f8", "accent": "#8b5cf6", "box": "#2b213c", "border": "none"},
+    "Sunset Energy": {"bg": "#fff7ed", "text": "#43200f", "accent": "#ea580c", "box": "#ffecd6", "border": "none"},
+    "Steel Pro": {"bg": "#edf1f5", "text": "#18222d", "accent": "#2d4863", "box": "#ffffff", "border": "1px solid #cfd8e3"},
+    "Gold Elite": {"bg": "#12110f", "text": "#f6f1e5", "accent": "#c6a03a", "box": "#27241e", "border": "1px solid #c6a03a"}
 }
+
+
+# ==========================================
+# 🖼️ VISTA PREVIA REAL DE LAS PLANTILLAS
+# ==========================================
+DEMO_CONFIG = {"entrenador": "TU MARCA", "redes": "@tu_instagram",
+               "fecha_inicio": "01/09/2026", "fecha_fin": "30/09/2026"}
+DEMO_CLIENTE = {"nombre": "Cliente Demo", "edad": "30", "peso": "72",
+                "altura": "173", "grasa": "18.5", "objetivo": "Pérdida de grasa"}
+
+DEMO_RUTINA = {
+    "Lunes": ("Pecho y tríceps", [
+        ("Press de banca", "4", "8", "90", "60", "2"),
+        ("Press inclinado con mancuernas", "3", "10", "75", "22", "2"),
+        ("Fondos en paralelas", "3", "12", "60", "0", "1"),
+        ("Extensión de tríceps en polea", "3", "15", "45", "25", "1"),
+    ]),
+    "Martes": ("Espalda y bíceps", [
+        ("Dominadas", "4", "8", "90", "0", "1"),
+        ("Remo con barra", "4", "10", "75", "50", "2"),
+        ("Jalón al pecho", "3", "12", "60", "45", "2"),
+        ("Curl de bíceps con barra", "3", "12", "45", "20", "1"),
+    ]),
+    "Miércoles": ("Pierna completa", [
+        ("Sentadilla trasera", "4", "8", "120", "80", "2"),
+        ("Peso muerto rumano", "4", "10", "90", "70", "2"),
+        ("Prensa de piernas", "3", "12", "75", "120", "2"),
+        ("Elevación de gemelos", "4", "15", "45", "40", "1"),
+    ]),
+    "Jueves": ("Hombro y core", [
+        ("Press militar", "4", "10", "75", "30", "2"),
+        ("Elevaciones laterales", "4", "15", "45", "8", "1"),
+        ("Face pull", "3", "15", "45", "20", "1"),
+        ("Plancha abdominal", "3", "45", "60", "0", ""),
+    ]),
+    "Viernes": ("Cardio y movilidad", [
+        ("Cinta en zona 2", "1", "35", "0", "0", ""),
+        ("Movilidad de cadera", "3", "10", "30", "0", ""),
+    ]),
+}
+
+DEMO_ANTOJOS = [list(fila) for fila in CATALOGO_ANTIANTOJOS[:5]]
+
+DEMO_OBJETIVOS = {
+    "resumen": [
+        ["Objetivo principal", "Pérdida de grasa"],
+        ["Nivel de experiencia", "Intermedio"],
+        ["Días de entrenamiento", "5 por semana"],
+        ["Distribución sugerida", "Empuje - Tirón - Pierna + Torso - Pierna"],
+        ["Calorías objetivo", "2180 kcal por día"],
+        ["Macros objetivo", "Proteína 158 g | Grasas 61 g | Carbohidratos 224 g"],
+        ["Agua diaria", "2.9 litros"],
+    ],
+    "estrategia": ("Doble progresión: llega al tope del rango de reps y recién ahí sube el peso. "
+                   "Trabaja a RIR 1-2 y programa una semana de descarga cada 6-8 semanas."),
+    "metas": [
+        ["Semana 1-2", "Ajustar horarios de comida y sumar 8.000 pasos diarios", "Registro y pasos"],
+        ["Semana 3-4", "Bajar 1.2 kg y subir 5 kg en press de banca", "Peso y cargas"],
+        ["Semana 5-6", "Mantener adherencia del 90% al plan", "Check semanal"],
+    ],
+    "habitos": [
+        ["Beber 2.5 - 3 litros de agua", "Diario"],
+        ["Dormir 7 a 8 horas", "Diario"],
+        ["Registrar todas las comidas", "Diario"],
+        ["Pesarse en ayunas", "3 veces por semana"],
+    ],
+    "notas": "",
+    "intro_antojos": ("Cuando aparezca el antojo: toma un vaso grande de agua y espera 10 minutos. "
+                      "Si sigue ahí, usa el sustituto de esta tabla y respeta la porción indicada."),
+}
+
+# Cada seccion se genera por separado: asi la etiqueta siempre corresponde
+# con lo que se ve, sin importar cuantas paginas ocupe en cada formato.
+SECCIONES_MUESTRA = [
+    ("objetivos", "Objetivos y metas"),
+    ("entreno", "Plan de entrenamiento"),
+    ("antojos", "Tabla antiantojos"),
+]
+
+
+def _construir_rutina_demo():
+    rutina = {}
+    for dia, (enfoque, ejercicios) in DEMO_RUTINA.items():
+        rutina[dia] = {
+            "enfoque": enfoque,
+            "items": [{"nombre": n, "s": s, "r": r, "seg": g, "peso (kg)": p, "rir": rir, "nota": ""}
+                      for n, s, r, g, p, rir in ejercicios],
+        }
+    return rutina
+
+
+@st.cache_data(show_spinner=False)
+def generar_pdf_muestra(estilo, formato, tipo_fondo, seccion="entreno"):
+    """PDF de ejemplo con una sola seccion, para ver como luce la plantilla."""
+    return bytes(generar_pdf_profesional(
+        _construir_rutina_demo(), {}, "", DEMO_CONFIG, DEMO_CLIENTE, None,
+        estilo, formato, tipo_fondo,
+        seccion == "entreno", False, False,
+        objetivos=DEMO_OBJETIVOS, perfil={}, antiantojos=DEMO_ANTOJOS,
+        inc_objetivos=(seccion == "objetivos"),
+        inc_composicion=False,
+        inc_antiantojos=(seccion == "antojos"),
+        calidad_fondo=4.5,
+    ))
+
+
+@st.cache_data(show_spinner=False)
+def renderizar_paginas_pdf(pdf_bytes, indices, escala=1.6):
+    """Convierte páginas del PDF en imágenes PNG. Devuelve None si falta pypdfium2."""
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        return None
+    try:
+        documento = pdfium.PdfDocument(pdf_bytes)
+        imagenes = []
+        for indice in indices:
+            if indice >= len(documento):
+                continue
+            imagen = documento[indice].render(scale=escala).to_pil()
+            memoria = _io.BytesIO()
+            imagen.save(memoria, format="PNG")
+            imagenes.append(memoria.getvalue())
+        documento.close()
+        return imagenes or None
+    except Exception:
+        return None
+
+
+def vista_previa_plantilla(estilo, formato, tipo_fondo, seccion="entreno", escala=1.6):
+    """Devuelve el PNG de la primera pagina de esa seccion, o None si no se puede."""
+    try:
+        imagenes = renderizar_paginas_pdf(
+            generar_pdf_muestra(estilo, formato, tipo_fondo, seccion), (0,), escala)
+        return imagenes[0] if imagenes else None
+    except Exception:
+        return None
+
+
+def construir_preview_html(estilo, formato):
+    """Vista aproximada en HTML: respaldo cuando no se puede renderizar el PDF."""
+    estilo_css = preview_colors[estilo]
+    if estilo == "Clean Minimal":
+        c_txt_dia = "#000000" if formato == "Horizontal (Tabla 7 Días)" else estilo_css["text"]
+        bg_dia = "#ffffff" if formato == "Horizontal (Tabla 7 Días)" else estilo_css["accent"]
+        border_dia = "1px solid #000"
+    else:
+        c_txt_dia = "#000000" if estilo in ESTILOS_ACENTO_CLARO else "#ffffff"
+        bg_dia = estilo_css["accent"]
+        border_dia = estilo_css["border"]
+
+    if formato == "Vertical (Bloques)":
+        return f"""
+        <div style="background-color: {estilo_css['bg']}; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif;">
+            <div style="display: flex; height: 60px;">
+                <div style="background-color: {bg_dia}; width: 30%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: {border_dia}; border-right: none;">
+                    <b style="color: {c_txt_dia}; font-size: 14px; margin-bottom: 2px;">LUNES</b>
+                    <span style="color: {c_txt_dia}; font-size: 9px; opacity: 0.8;">PIERNA - CUÁDRICEPS</span>
+                </div>
+                <div style="background-color: {estilo_css['box']}; width: 70%; padding: 8px; border: {border_dia}; border-left: none;">
+                    <div style="color: {estilo_css['text']}; font-size: 11px; font-weight: bold;">SENTADILLAS</div>
+                    <div style="color: {estilo_css['text']}; font-size: 10px; font-style: italic; opacity: 0.8;">4 SETS | 12 REPS</div>
+                </div>
+            </div>
+        </div>
+        """
+    return f"""
+    <div style="background-color: {estilo_css['bg']}; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif; overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 9px;">
+            <tr style="background-color: {bg_dia}; color: {c_txt_dia}; font-weight: bold;">
+                <td style="border: {border_dia}; padding: 5px;">LUNES<br><span style="font-size:7px; font-weight:normal;">PIERNA</span></td>
+                <td style="border: {border_dia}; padding: 5px;">MARTES<br><span style="font-size:7px; font-weight:normal;">EMPUJE</span></td>
+                <td style="border: {border_dia}; padding: 5px;">MIERCOLES<br><span style="font-size:7px; font-weight:normal;">DESCANSO</span></td>
+            </tr>
+            <tr style="background-color: {estilo_css['box']}; color: {estilo_css['text']};">
+                <td style="border: {border_dia}; padding: 5px;"><b>SENTAD.</b><br>4S | 12R</td>
+                <td style="border: {border_dia}; padding: 5px;"><b>PRESS</b><br>4S | 10R</td>
+                <td style="border: {border_dia}; padding: 5px;"><b>CARDIO</b><br>Recup.</td>
+            </tr>
+        </table>
+    </div>
+    """
+
+
+def seleccionar_plantilla(nombre):
+    st.session_state["k_estilo"] = nombre
+
 
 # --- PANEL LATERAL ---
 with st.sidebar:
@@ -1190,69 +1432,35 @@ with st.sidebar:
     formato_elegido = st.radio("1. Estructura del PDF:", ["Vertical (Bloques)", "Horizontal (Tabla 7 Días)"])
     st.markdown("<br>", unsafe_allow_html=True)
     
-    opciones_estilos = ["Urban Power", "Clean Minimal", "Dark Elite", "Ocean Fitness", "Cyber Neon", "Eco Wellness"]
+    opciones_estilos = LISTA_PLANTILLAS
     estilo_elegido = st.selectbox("2. Tema de Color:", opciones_estilos, key="k_estilo")
+    st.caption(DESCRIPCION_PLANTILLAS.get(estilo_elegido, ""))
 
     opciones_fondo = ["Sencillo (Color Sólido)", "Personalizado (Textura/Imagen)"]
-    if estilo_elegido == "Clean Minimal":
-        tipo_fondo_elegido = st.radio("3. Tipo de Fondo:", ["Sencillo (Color Sólido)"], help="Clean Minimal solo usa fondo blanco.")
+    archivo_fondo = BG_IMAGES.get(estilo_elegido)
+    tiene_textura = bool(archivo_fondo) and os.path.exists(os.path.join("img", archivo_fondo))
+
+    if not tiene_textura:
+        if estilo_elegido == "Clean Minimal":
+            ayuda_fondo = "Clean Minimal solo usa fondo blanco."
+        elif archivo_fondo:
+            ayuda_fondo = f"Falta la imagen `{archivo_fondo}` en la carpeta `img`, así que se usa color sólido."
+        else:
+            ayuda_fondo = f"'{estilo_elegido}' es una plantilla de color sólido: no necesita imagen de fondo."
+        tipo_fondo_elegido = st.radio("3. Tipo de Fondo:", ["Sencillo (Color Sólido)"], help=ayuda_fondo)
     else:
         tipo_fondo_elegido = st.radio("3. Tipo de Fondo:", opciones_fondo)
-        
         if tipo_fondo_elegido == "Personalizado (Textura/Imagen)":
-            archivo_esperado = BG_IMAGES.get(estilo_elegido)
-            if archivo_esperado:
-                ruta_completa = os.path.join("img", archivo_esperado)
-                if not os.path.exists(ruta_completa):
-                    st.warning(f"⚠️ ¡Falta la imagen de fondo!\n\nGuarda la imagen: 👉 `{archivo_esperado}` dentro de la carpeta `img`")
-                else:
-                    st.success(f"✅ ¡Fondo `{archivo_esperado}` detectado!")
+            st.success(f"✅ ¡Fondo `{archivo_fondo}` detectado!")
 
-    st.write("**Vista Previa (Aproximada):**")
-    estilo_css = preview_colors[estilo_elegido]
-    
-    if estilo_elegido == "Clean Minimal":
-         c_txt_dia = "#000000" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["text"]
-         bg_dia = "#ffffff" if formato_elegido == "Horizontal (Tabla 7 Días)" else estilo_css["accent"]
-         border_dia = "1px solid #000"
+    st.write("**Vista Previa:**")
+    _miniatura = vista_previa_plantilla(estilo_elegido, formato_elegido, tipo_fondo_elegido, "entreno", 1.1)
+    if _miniatura:
+        st.image(_miniatura, use_container_width=True)
+        st.caption("Vista real del PDF. Compara todas en la pestaña 🎨 Plantillas.")
     else:
-         c_txt_dia = "#ffffff" if estilo_elegido not in ["Urban Power", "Cyber Neon"] else "#000000"
-         bg_dia = estilo_css["accent"]
-         border_dia = estilo_css["border"]
-
-    if formato_elegido == "Vertical (Bloques)":
-        html_preview = f"""
-        <div style="background-color: {estilo_css['bg']}; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif;">
-            <div style="display: flex; height: 60px;">
-                <div style="background-color: {bg_dia}; width: 30%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: {border_dia}; border-right: none;">
-                    <b style="color: {c_txt_dia}; font-size: 14px; margin-bottom: 2px;">LUNES</b>
-                    <span style="color: {c_txt_dia}; font-size: 9px; opacity: 0.8;">PIERNA - CUÁDRICEPS</span>
-                </div>
-                <div style="background-color: {estilo_css['box']}; width: 70%; padding: 8px; border: {border_dia}; border-left: none;">
-                    <div style="color: {estilo_css['text']}; font-size: 11px; font-weight: bold;">SENTADILLAS</div>
-                    <div style="color: {estilo_css['text']}; font-size: 10px; font-style: italic; opacity: 0.8;">4 SETS | 12 REPS</div>
-                </div>
-            </div>
-        </div>
-        """
-    else:
-        html_preview = f"""
-        <div style="background-color: {estilo_css['bg']}; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-family: Arial, sans-serif; overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 9px;">
-                <tr style="background-color: {bg_dia}; color: {c_txt_dia}; font-weight: bold;">
-                    <td style="border: {border_dia}; padding: 5px;">LUNES<br><span style="font-size:7px; font-weight:normal;">PIERNA</span></td>
-                    <td style="border: {border_dia}; padding: 5px;">MARTES<br><span style="font-size:7px; font-weight:normal;">EMPUJE</span></td>
-                    <td style="border: {border_dia}; padding: 5px;">MIERCOLES<br><span style="font-size:7px; font-weight:normal;">DESCANSO</span></td>
-                </tr>
-                <tr style="background-color: {estilo_css['box']}; color: {estilo_css['text']};">
-                    <td style="border: {border_dia}; padding: 5px;"><b>SENTAD.</b><br>4S | 12R</td>
-                    <td style="border: {border_dia}; padding: 5px;"><b>PRESS</b><br>4S | 10R</td>
-                    <td style="border: {border_dia}; padding: 5px;"><b>CARDIO</b><br>Recup.</td>
-                </tr>
-            </table>
-        </div>
-        """
-    st.markdown(html_preview, unsafe_allow_html=True)
+        st.caption("Vista aproximada. Instala `pypdfium2` para ver el PDF real.")
+        st.markdown(construir_preview_html(estilo_elegido, formato_elegido), unsafe_allow_html=True)
 
 
 # --- PERFIL DEL CLIENTE ---
@@ -1293,14 +1501,64 @@ st.divider()
 
 dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-tab_obj, tab_comp, tab1, tab2, tab_anti, tab3 = st.tabs([
+tab_obj, tab_comp, tab1, tab2, tab_anti, tab3, tab_plant = st.tabs([
     "🎯 Objetivos",
     "📊 % de Grasa",
     "🔥 Entrenamiento",
     "🍎 Nutrición",
     "🍫 Antiantojos",
-    "💡 Consejos"
+    "💡 Consejos",
+    "🎨 Plantillas"
 ])
+
+# ==========================================================
+# 🎨 GALERÍA Y VISTA PREVIA DE PLANTILLAS
+# ==========================================================
+with tab_plant:
+    st.markdown(f"#### 🎨 Plantilla actual: {estilo_elegido}")
+    st.caption(f"{DESCRIPCION_PLANTILLAS.get(estilo_elegido, '')}  ·  Formato: {formato_elegido}  ·  Fondo: {tipo_fondo_elegido}")
+
+    paginas_muestra = [
+        (etiqueta, vista_previa_plantilla(estilo_elegido, formato_elegido, tipo_fondo_elegido, seccion, 2.0))
+        for seccion, etiqueta in SECCIONES_MUESTRA
+    ]
+    if any(imagen for _, imagen in paginas_muestra):
+        columnas_muestra = st.columns(len(paginas_muestra))
+        for columna, (etiqueta, imagen) in zip(columnas_muestra, paginas_muestra):
+            if imagen:
+                columna.image(imagen, caption=etiqueta, use_container_width=True)
+        st.caption("Ejemplo con datos de muestra. Tu logo y los datos reales del cliente se aplican al generar el PDF.")
+    else:
+        st.info("Para ver el PDF real dentro de la app hace falta la librería `pypdfium2`. "
+                "Mientras tanto se muestra la vista aproximada.")
+        st.markdown(construir_preview_html(estilo_elegido, formato_elegido), unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown("##### 🖼️ Galería: compara las 11 plantillas")
+    if not st.session_state.get("ver_galeria_plantillas"):
+        if st.button("Ver todas las plantillas", use_container_width=True):
+            st.session_state["ver_galeria_plantillas"] = True
+            st.rerun()
+        st.caption("Se generan 11 vistas previas reales; la primera vez tarda unos segundos.")
+    else:
+        columnas_galeria = st.columns(4)
+        for indice_plantilla, nombre_plantilla in enumerate(LISTA_PLANTILLAS):
+            with columnas_galeria[indice_plantilla % 4]:
+                miniatura = vista_previa_plantilla(nombre_plantilla, formato_elegido,
+                                                   "Sencillo (Color Sólido)", "entreno", 0.9)
+                if miniatura:
+                    st.image(miniatura, use_container_width=True)
+                else:
+                    st.markdown(construir_preview_html(nombre_plantilla, formato_elegido), unsafe_allow_html=True)
+                es_actual = (nombre_plantilla == estilo_elegido)
+                st.button(("✅ " if es_actual else "") + nombre_plantilla,
+                          key=f"btn_plantilla_{indice_plantilla}",
+                          use_container_width=True,
+                          disabled=es_actual,
+                          on_click=seleccionar_plantilla,
+                          args=(nombre_plantilla,))
+                st.caption(DESCRIPCION_PLANTILLAS.get(nombre_plantilla, ""))
 
 # ==========================================================
 # 📊 COMPOSICIÓN CORPORAL — se calcula primero porque alimenta
