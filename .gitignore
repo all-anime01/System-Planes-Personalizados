@@ -1,0 +1,10 @@
+# Archivos generados en tiempo de ejecución (no deben publicarse)
+licencias_master.json
+licencia_guardada.json
+dispositivo_id.json
+backup_progreso.json
+
+# Entorno y temporales
+.venv/
+__pycache__/
+*.pyc
