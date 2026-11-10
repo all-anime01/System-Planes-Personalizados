@@ -3,3 +3,5 @@ fpdf2
 Pillow
 pypdfium2
 anthropic
+python-docx
+openpyxl

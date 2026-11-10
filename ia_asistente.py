@@ -349,3 +349,74 @@ def ejecutar_turno_asistente(cliente, historial, mensaje_usuario, herramientas, 
         historial.append({"role": "user", "content": resultados})
 
     return ("Hice varios pasos pero no terminé la tarea. Revisa los cambios y dime cómo seguimos.", acciones)
+
+
+# ==========================================================================
+# 📄 LECTURA DE DOCUMENTOS CON IA (opcional; la lectura normal no usa IA)
+# ==========================================================================
+
+_ESQUEMA_COMIDA = {
+    "type": "object",
+    "properties": {"comida": {"type": "string"}, "alimentos": {"type": "string"}, "kcal": {"type": "string"}},
+    "required": ["comida", "alimentos", "kcal"],
+    "additionalProperties": False,
+}
+
+ESQUEMA_DOCUMENTO = {
+    "type": "object",
+    "properties": {
+        "es_plan": {"type": "boolean"},
+        "observaciones": {"type": "string"},
+        "consejos": {"type": "string"},
+        "entrenamiento": ESQUEMA_EXTRACCION["properties"]["bloques"],
+        "nutricion": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "etiqueta": {"type": "string"},
+                    "dia_semana": {"type": "string", "enum": DIAS + ["Sin especificar"]},
+                    "comidas": {"type": "array", "items": _ESQUEMA_COMIDA},
+                },
+                "required": ["etiqueta", "dia_semana", "comidas"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["es_plan", "observaciones", "consejos", "entrenamiento", "nutricion"],
+    "additionalProperties": False,
+}
+
+PROMPT_DOCUMENTO = """Eres el asistente de un entrenador personal. Abajo está el texto extraído de un documento (Word, PDF, Excel u otro) con un plan de entrenamiento y/o de alimentación de un cliente. Conviértelo a datos estructurados para cargarlo en el sistema del entrenador, sin perder información.
+
+Entrenamiento ("entrenamiento"): un bloque por día o sesión, con las mismas reglas que una transcripción: "etiqueta" con el título original, "dia_semana" solo si el día está escrito (si no, "Sin especificar"), nombres de ejercicios completos y bien escritos en español, "4x12" separado en series y reps, "descanso_seg" solo dígitos en segundos, "peso_kg" en kg (convierte libras), y técnica, tempo o superseries en "nota". Lo que no esté escrito queda vacío; no inventes cargas ni repeticiones.
+
+Nutrición ("nutricion"): un bloque por día o por menú. Si el plan es un solo menú para todos los días, usa un único bloque con "Sin especificar". Cada comida con su nombre ("Desayuno", "Colación", "Cena"...), los alimentos con sus cantidades tal como aparecen, y "kcal" solo dígitos si aparece.
+
+"consejos": recomendaciones generales del documento (hidratación, descanso, suplementos...), en texto. "observaciones": una o dos frases con lo que el entrenador debería revisar. Si el documento no contiene ningún plan, "es_plan" es false.
+
+TEXTO DEL DOCUMENTO:
+"""
+
+
+def interpretar_documento(cliente, texto):
+    """Interpreta con IA el texto de un documento. Devuelve el formato común de importación."""
+    texto = (texto or "").strip()
+    if not texto:
+        raise ErrorIA("El documento no tiene texto para leer.")
+    if len(texto) > 400_000:
+        raise ErrorIA("El documento es demasiado largo para leerlo de una vez. Divídelo en partes.")
+    respuesta = _crear_mensaje(
+        cliente,
+        max_tokens=16000,  # más alto exige streaming en el SDK
+        output_config={"effort": "medium",
+                       "format": {"type": "json_schema", "schema": ESQUEMA_DOCUMENTO}},
+        messages=[{"role": "user", "content": PROMPT_DOCUMENTO + texto}],
+    )
+    _revisar_parada(respuesta)
+    try:
+        datos = json.loads(_texto_respuesta(respuesta))
+    except ValueError as e:
+        raise ErrorIA("La respuesta de la IA no tuvo el formato esperado. Intenta de nuevo.") from e
+    datos["rutina_casa"] = None
+    return datos

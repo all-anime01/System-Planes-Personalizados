@@ -11,6 +11,7 @@ import uuid
 
 import pandas as pd
 
+import importar_documentos as idoc
 import plan_estado as pe
 import rutina_casa as rc
 
@@ -1490,6 +1491,12 @@ CONFIG_TABLA_GYM = {
     "rir": st.column_config.TextColumn("RIR", width="small"),
     "nota": st.column_config.TextColumn("Nota / técnica", width="medium"),
 }
+COLUMNAS_COMIDAS = ["comida", "alimentos", "kcal"]
+CONFIG_TABLA_COMIDAS = {
+    "comida": st.column_config.TextColumn("Comida", width="small"),
+    "alimentos": st.column_config.TextColumn("Alimentos y cantidades", width="large"),
+    "kcal": st.column_config.TextColumn("Kcal", width="small"),
+}
 CONFIG_TABLA_CASA = {
     "nombre": st.column_config.TextColumn("Ejercicio", width="medium", required=True),
     "series": st.column_config.TextColumn("Series / vueltas", width="small"),
@@ -1574,110 +1581,264 @@ def importar_rutina_desde_foto():
             revisar_importacion(resultado)
 
 
-def _descartar_importacion():
-    st.session_state.pop("_ocr_resultado", None)
-    st.session_state["_ocr_lote"] = st.session_state.get("_ocr_lote", 0) + 1
+def _descartar_importacion(prefijo="_ocr"):
+    st.session_state.pop(f"{prefijo}_resultado", None)
+    st.session_state[f"{prefijo}_lote"] = st.session_state.get(f"{prefijo}_lote", 0) + 1
+
+
+def resultado_desde_foto(resultado):
+    """Adapta la lectura de la foto al formato común de importación."""
+    return {"es_plan": bool(resultado.get("es_rutina")), "observaciones": resultado.get("observaciones", ""),
+            "entrenamiento": resultado.get("bloques") or [], "nutricion": [], "consejos": "", "rutina_casa": None}
 
 
 def revisar_importacion(resultado):
-    ver = st.session_state.get("_ocr_ver", 0)
+    """Revisión de la lectura por foto."""
+    revisar_plan_importado(resultado_desde_foto(resultado), "_ocr", "_aviso_import")
+
+
+TODOS_LOS_DIAS = "Todos los días"
+
+
+def _reparto_dias(bloques):
+    """Día sugerido para cada bloque: el escrito o, si no hay, una semana equilibrada."""
+    ocupados = {b["dia_semana"] for b in bloques if b.get("dia_semana") in pe.DIAS}
+    sugeridos = rc.DIAS_POR_FRECUENCIA.get(min(max(len(bloques), 1), 7), pe.DIAS)
+    libres = [d for d in sugeridos if d not in ocupados] + \
+             [d for d in pe.DIAS if d not in ocupados and d not in sugeridos]
+    dias = []
+    for b in bloques:
+        if b.get("dia_semana") in pe.DIAS:
+            dias.append(b["dia_semana"])
+        else:
+            dias.append(libres.pop(0) if libres else "No importar")
+    return dias
+
+
+def _a_rutina_casa(ejercicios):
+    nuevos = []
+    for e in ejercicios:
+        ficha = rc.buscar_en_biblioteca(e["nombre"])
+        nuevos.append({
+            "nombre": e["nombre"], "series": e["series"], "reps_o_tiempo": e["reps"],
+            "descanso": f"{e['descanso_seg']} s" if e["descanso_seg"].isdigit() else e["descanso_seg"],
+            "indicaciones": e["nota"] or (ficha[5] if ficha else ""),
+            "zona": ficha[1] if ficha else "",
+        })
+    return nuevos
+
+
+def revisar_plan_importado(resultado, prefijo, clave_aviso):
+    """Revisión editable de un plan leído (foto o documento) y carga en el sistema."""
+    ver = st.session_state.get(f"{prefijo}_ver", 0)
     observaciones = (resultado.get("observaciones") or "").strip()
-    bloques = resultado.get("bloques") or []
+    bloques_e = resultado.get("entrenamiento") or []
+    bloques_n = resultado.get("nutricion") or []
+    consejos_leidos = (resultado.get("consejos") or "").strip()
+    casa_leida = resultado.get("rutina_casa")
     st.divider()
-    if not resultado.get("es_rutina") or not bloques:
-        st.warning("No encontré una rutina en la imagen. " + observaciones)
-        if st.button("Descartar", key="_ocr_descartar_vacio"):
-            _descartar_importacion()
+    if not resultado.get("es_plan"):
+        st.warning("No encontré una rutina ni un plan de comidas. " + observaciones)
+        if st.button("Descartar", key=f"{prefijo}_descartar_vacio"):
+            _descartar_importacion(prefijo)
             st.rerun()
         return
 
     st.markdown("##### ✍️ Revisa lo que se leyó")
+    resumen = []
+    if bloques_e:
+        resumen.append(f"🔥 {len(bloques_e)} sesiones de entrenamiento")
+    if bloques_n:
+        resumen.append(f"🍎 {len(bloques_n)} menús de comidas")
+    if consejos_leidos:
+        resumen.append("💡 consejos")
+    if casa_leida:
+        resumen.append("🏠 rutina en casa")
+    st.caption("Encontré: " + " · ".join(resumen) + ". Corrige directamente en las tablas: puedes editar, "
+               "agregar o borrar filas.")
     if observaciones:
         st.info("🔎 **Para revisar:** " + observaciones)
-    st.caption("Corrige directamente en las tablas: puedes editar celdas, agregar o borrar filas.")
 
-    # Los bloques sin día ("Día 1", "Rutina A") se reparten en una semana equilibrada
-    ocupados = {b["dia_semana"] for b in bloques if b["dia_semana"] in pe.DIAS}
-    sugeridos = rc.DIAS_POR_FRECUENCIA.get(min(len(bloques), 7), pe.DIAS)
-    libres = [d for d in sugeridos if d not in ocupados] + \
-             [d for d in pe.DIAS if d not in ocupados and d not in sugeridos]
-    opciones_dia = pe.DIAS + ["No importar"]
-
-    asignaciones = []
-    for idx, bloque in enumerate(bloques):
-        if bloque["dia_semana"] in pe.DIAS:
-            sugerido = bloque["dia_semana"]
-        else:
-            sugerido = libres.pop(0) if libres else "No importar"
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([1.3, 1.2, 2.5])
-            c1.markdown(f"**{bloque.get('etiqueta') or f'Bloque {idx + 1}'}**  \n"
-                        f"{len(bloque.get('ejercicios', []))} ejercicios leídos")
-            dia = c2.selectbox("Asignar a", opciones_dia, index=opciones_dia.index(sugerido),
-                               key=f"_ocr_dia_{ver}_{idx}")
-            enfoque = c3.text_input("Enfoque del día", bloque.get("enfoque", ""), key=f"_ocr_enf_{ver}_{idx}")
-            tabla = st.data_editor(df_ejercicios(bloque.get("ejercicios", []), COLUMNAS_GYM),
-                                   column_config=CONFIG_TABLA_GYM, num_rows="dynamic", hide_index=True,
-                                   width="stretch", key=f"_ocr_tabla_{ver}_{idx}")
-            asignaciones.append((dia, enfoque, filas_de_tabla(tabla)))
-
-    agrupado = {}
-    for dia, enfoque, ejercicios in asignaciones:
-        if dia == "No importar" or not ejercicios:
-            continue
-        if dia in agrupado:
-            agrupado[dia] = (agrupado[dia][0] or enfoque, agrupado[dia][1] + ejercicios)
-        else:
-            agrupado[dia] = (enfoque, ejercicios)
-    if len(agrupado) < len([a for a in asignaciones if a[0] != "No importar" and a[2]]):
-        st.caption("ℹ️ Varios bloques van al mismo día: se unirán en el orden en que aparecen.")
-
-    c1, c2 = st.columns(2)
-    destino = c1.radio("¿Dónde la cargo?", ["🔥 Plan de entrenamiento (gimnasio)", "🏠 Rutina en casa"],
-                       key="_ocr_destino")
-    modo = c2.radio("Si el día ya tiene ejercicios", ["Reemplazarlos", "Agregar al final"], key="_ocr_modo")
+    modo = st.radio("Si un día ya tiene datos", ["Reemplazarlos", "Agregar al final"], horizontal=True,
+                    key=f"{prefijo}_modo")
     modo_pe = "agregar" if modo.startswith("Agregar") else "reemplazar"
 
-    b1, b2 = st.columns([3, 1])
-    if b1.button("✅ Cargar en el plan", type="primary", disabled=not agrupado, width="stretch",
-                 key="_ocr_cargar"):
-        total = sum(len(ej) for _, ej in agrupado.values())
-        if destino.startswith("🔥"):
-            estado = pe.VistaEstado(st.session_state)
-            cambios = {}
-            for dia, (enfoque, ejercicios) in agrupado.items():
-                cambios.update(pe.cambios_rutina_dia(estado, dia, enfoque, ejercicios, modo_pe))
-            st.session_state[pe.CLAVE_CAMBIOS] = cambios
-            donde = "en el plan de entrenamiento"
+    # ---------------- Entrenamiento
+    entreno_agrupado, destino = {}, "gym"
+    if bloques_e:
+        st.markdown("###### 🔥 Entrenamiento")
+        c1, c2 = st.columns([1, 2])
+        usar_entreno = c1.checkbox("Importar entrenamiento", True, key=f"{prefijo}_usar_e")
+        destino_txt = c2.radio("Cargar en", ["🔥 Plan de entrenamiento (gimnasio)", "🏠 Rutina en casa"],
+                               horizontal=True, key=f"{prefijo}_destino", disabled=not usar_entreno)
+        destino = "gym" if destino_txt.startswith("🔥") else "casa"
+        opciones_dia = pe.DIAS + ["No importar"]
+        for idx, (bloque, sugerido) in enumerate(zip(bloques_e, _reparto_dias(bloques_e))):
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([1.3, 1.2, 2.5])
+                c1.markdown(f"**{bloque.get('etiqueta') or f'Sesión {idx + 1}'}**  \n"
+                            f"{len(bloque.get('ejercicios', []))} ejercicios leídos")
+                dia = c2.selectbox("Asignar a", opciones_dia, index=opciones_dia.index(sugerido),
+                                   key=f"{prefijo}_dia_{ver}_{idx}")
+                enfoque = c3.text_input("Enfoque del día", bloque.get("enfoque", ""),
+                                        key=f"{prefijo}_enf_{ver}_{idx}")
+                tabla = st.data_editor(df_ejercicios(bloque.get("ejercicios", []), COLUMNAS_GYM),
+                                       column_config=CONFIG_TABLA_GYM, num_rows="dynamic", hide_index=True,
+                                       width="stretch", key=f"{prefijo}_tabla_{ver}_{idx}")
+            ejercicios = filas_de_tabla(tabla)
+            if not usar_entreno or dia == "No importar" or not (ejercicios or enfoque.strip()):
+                continue
+            if dia in entreno_agrupado:
+                entreno_agrupado[dia] = (entreno_agrupado[dia][0] or enfoque, entreno_agrupado[dia][1] + ejercicios)
+            else:
+                entreno_agrupado[dia] = (enfoque, ejercicios)
+
+    # ---------------- Nutrición
+    nutri_por_dia = {}
+    if bloques_n:
+        st.markdown("###### 🍎 Nutrición")
+        usar_nutri = st.checkbox("Importar comidas", True, key=f"{prefijo}_usar_n")
+        opciones_dia_n = pe.DIAS + [TODOS_LOS_DIAS, "No importar"]
+        if len(bloques_n) == 1 and bloques_n[0].get("dia_semana") not in pe.DIAS:
+            sugeridos_n = [TODOS_LOS_DIAS]
         else:
-            plan = rc.normalizar_plan(pe.leer_rutina_casa(st.session_state) or rc.plan_vacio())
-            por_dia = {d["dia"]: d for d in plan["dias"]}
-            for dia, (enfoque, ejercicios) in agrupado.items():
-                nuevos = []
-                for e in ejercicios:
-                    ficha = rc.buscar_en_biblioteca(e["nombre"])
-                    nuevos.append({
-                        "nombre": e["nombre"], "series": e["series"], "reps_o_tiempo": e["reps"],
-                        "descanso": f"{e['descanso_seg']} s" if e["descanso_seg"].isdigit() else e["descanso_seg"],
-                        "indicaciones": e["nota"] or (ficha[5] if ficha else ""),
-                        "zona": ficha[1] if ficha else "",
-                    })
+            sugeridos_n = _reparto_dias(bloques_n)
+        for idx, (bloque, sugerido) in enumerate(zip(bloques_n, sugeridos_n)):
+            with st.container(border=True):
+                c1, c2 = st.columns([1.3, 3.7])
+                c1.markdown(f"**{bloque.get('etiqueta') or f'Menú {idx + 1}'}**  \n"
+                            f"{len(bloque.get('comidas', []))} comidas leídas")
+                dia = c2.selectbox("Asignar a", opciones_dia_n, index=opciones_dia_n.index(sugerido),
+                                   key=f"{prefijo}_ndia_{ver}_{idx}",
+                                   help="'Todos los días' copia este menú de lunes a domingo.")
+                tabla = st.data_editor(df_ejercicios(bloque.get("comidas", []), COLUMNAS_COMIDAS),
+                                       column_config=CONFIG_TABLA_COMIDAS, num_rows="dynamic", hide_index=True,
+                                       width="stretch", key=f"{prefijo}_ntabla_{ver}_{idx}")
+            comidas = [{k: _celda(v) for k, v in c.items()} for c in tabla.to_dict("records")]
+            comidas = [c for c in comidas if c["comida"] or c["alimentos"]]
+            if not usar_nutri or dia == "No importar" or not comidas:
+                continue
+            for d in (pe.DIAS if dia == TODOS_LOS_DIAS else [dia]):
+                nutri_por_dia.setdefault(d, []).extend(comidas)
+
+    # ---------------- Consejos y rutina en casa
+    consejos_txt = ""
+    if consejos_leidos:
+        st.markdown("###### 💡 Consejos")
+        if st.checkbox("Importar consejos", True, key=f"{prefijo}_usar_c"):
+            consejos_txt = st.text_area("Consejos leídos", consejos_leidos, height=110,
+                                        key=f"{prefijo}_consejos_{ver}").strip()
+    usar_casa = False
+    if casa_leida:
+        st.markdown("###### 🏠 Rutina en casa")
+        usar_casa = st.checkbox(f"Importar la rutina en casa del archivo ({len(casa_leida.get('dias', []))} días)",
+                                True, key=f"{prefijo}_usar_casa")
+
+    hay_algo = bool(entreno_agrupado or nutri_por_dia or consejos_txt or usar_casa)
+    b1, b2 = st.columns([3, 1])
+    if b1.button("✅ Cargar en el plan", type="primary", disabled=not hay_algo, width="stretch",
+                 key=f"{prefijo}_cargar"):
+        estado = pe.VistaEstado(st.session_state)
+        cambios, partes = {}, []
+        total_ej = sum(len(ej) for _, ej in entreno_agrupado.values())
+        if entreno_agrupado and destino == "gym":
+            for dia, (enfoque, ejercicios) in entreno_agrupado.items():
+                cambios.update(pe.cambios_rutina_dia(estado, dia, enfoque, ejercicios, modo_pe))
+            partes.append(f"{total_ej} ejercicios en 🔥 Entrenamiento ({', '.join(entreno_agrupado)})")
+        if nutri_por_dia:
+            for dia, comidas in nutri_por_dia.items():
+                cambios.update(pe.cambios_comidas_dia(estado, dia, comidas, modo_pe))
+            partes.append(f"comidas en 🍎 Nutrición ({len(nutri_por_dia)} días)")
+        if consejos_txt:
+            actual = str(st.session_state.get("k_consejos", "")).strip()
+            cambios["k_consejos"] = (actual + "\n\n" + consejos_txt) if (modo_pe == "agregar" and actual) else consejos_txt
+            partes.append("💡 consejos")
+        if cambios:
+            pendientes = dict(st.session_state.get(pe.CLAVE_CAMBIOS) or {})
+            pendientes.update(cambios)
+            st.session_state[pe.CLAVE_CAMBIOS] = pendientes
+
+        plan_casa_nuevo = None
+        if usar_casa:
+            plan_casa_nuevo = rc.normalizar_plan(casa_leida)
+            partes.append("🏠 la rutina en casa")
+        if entreno_agrupado and destino == "casa":
+            plan_casa_nuevo = plan_casa_nuevo or rc.normalizar_plan(
+                pe.leer_rutina_casa(st.session_state) or rc.plan_vacio())
+            por_dia = {d["dia"]: d for d in plan_casa_nuevo["dias"]}
+            for dia, (enfoque, ejercicios) in entreno_agrupado.items():
+                nuevos = _a_rutina_casa(ejercicios)
                 if dia in por_dia and modo_pe == "agregar":
                     por_dia[dia]["ejercicios"] += nuevos
                     por_dia[dia]["enfoque"] = por_dia[dia]["enfoque"] or enfoque
                 else:
                     por_dia[dia] = {"dia": dia, "enfoque": enfoque,
                                     "formato": por_dia.get(dia, {}).get("formato", ""), "ejercicios": nuevos}
-            plan["dias"] = list(por_dia.values())
-            aplicar_ahora(pe.cambios_rutina_casa(pe.VistaEstado(st.session_state), rc.normalizar_plan(plan)))
-            donde = "en la pestaña 🏠 Rutina en Casa"
-        st.session_state["_aviso_import"] = (f"✅ Se cargaron {total} ejercicios {donde}: "
-                                             f"{', '.join(agrupado)}. Revisa cada día abajo.")
-        _descartar_importacion()
+            plan_casa_nuevo["dias"] = list(por_dia.values())
+            partes.append(f"{total_ej} ejercicios en 🏠 Rutina en Casa ({', '.join(entreno_agrupado)})")
+        if plan_casa_nuevo:
+            aplicar_ahora(pe.cambios_rutina_casa(pe.VistaEstado(st.session_state), rc.normalizar_plan(plan_casa_nuevo)))
+
+        st.session_state[clave_aviso] = "✅ Se cargaron " + "; ".join(partes) + ". Ya puedes ajustarlo en cada pestaña."
+        _descartar_importacion(prefijo)
         st.rerun()
-    if b2.button("Descartar", width="stretch", key="_ocr_descartar"):
-        _descartar_importacion()
+    if b2.button("Descartar", width="stretch", key=f"{prefijo}_descartar"):
+        _descartar_importacion(prefijo)
         st.rerun()
+
+
+# ==========================================
+# 📥 IMPORTAR DESDE DOCUMENTO
+# ==========================================
+AYUDA_FORMATOS = """
+- **Excel / CSV:** una fila por ejercicio con columnas como *Día, Ejercicio, Series, Reps, Descanso, Peso, RIR, Notas*; o una fila por comida con *Comida, Alimentos, Kcal*. También tablas con **un día por columna** (menú o rutina semanal). Cada hoja se lee por separado.
+- **Word:** tablas como las de Excel, o texto con el día como título (*Lunes: Pierna*, *Día 1*) y un ejercicio por línea (*Sentadilla 4x12 descanso 90 s*). Las comidas se reconocen por su nombre (*Desayuno: avena...*).
+- **PDF:** igual que Word, siempre que tenga texto seleccionable. Si es un escaneo, usa **📸 Importar desde foto** en la pestaña Entrenamiento.
+- **JSON:** las plantillas que descargas de este sistema, o archivos con días, ejercicios y comidas.
+- Títulos como *Alimentación*, *Rutina* o *Consejos* ayudan a separar las secciones.
+"""
+
+
+def importar_desde_documento():
+    aviso = st.session_state.pop("_aviso_doc", None)
+    if aviso:
+        st.success(aviso)
+    st.markdown("#### 📥 Importar una rutina o plan de nutrición")
+    st.caption("Carga un plan que ya tengas en Word, PDF, Excel, CSV, JSON o TXT. El sistema lo lee, tú lo "
+               "revisas en tablas y con un clic queda cargado para ajustarlo y mejorarlo aquí.")
+    lote = st.session_state.get("_doc_lote", 0)
+    archivo = st.file_uploader("Documento con la rutina o el plan", type=idoc.EXTENSIONES,
+                               key=f"_doc_archivo_{lote}")
+    with st.expander("💡 ¿Cómo debe estar escrito el documento?"):
+        st.markdown(AYUDA_FORMATOS)
+
+    columnas = st.columns(2 if ia_disponible() else 1)
+    if columnas[0].button("📖 Leer documento", type="primary", disabled=archivo is None, width="stretch",
+                          key="_doc_leer"):
+        try:
+            resultado, _texto = idoc.leer_documento(archivo.name, archivo.getvalue())
+            st.session_state["_doc_resultado"] = resultado
+            st.session_state["_doc_ver"] = st.session_state.get("_doc_ver", 0) + 1
+            st.rerun()
+        except idoc.ErrorDocumento as e:
+            st.error(str(e))
+        except Exception:
+            st.error("No se pudo leer el archivo. Revisa que no esté dañado o protegido con contraseña.")
+    if ia_disponible() and columnas[1].button("🤖 Leer con IA (documentos desordenados)",
+                                             disabled=archivo is None, width="stretch", key="_doc_leer_ia"):
+        import ia_asistente
+        with st.spinner("La IA está leyendo el documento..."):
+            try:
+                _, texto = idoc.leer_documento(archivo.name, archivo.getvalue())
+                st.session_state["_doc_resultado"] = ia_asistente.interpretar_documento(cliente_ia(), texto)
+                st.session_state["_doc_ver"] = st.session_state.get("_doc_ver", 0) + 1
+                st.rerun()
+            except (idoc.ErrorDocumento, ia_asistente.ErrorIA) as e:
+                st.error(str(e))
+
+    resultado = st.session_state.get("_doc_resultado")
+    if resultado:
+        revisar_plan_importado(resultado, "_doc", "_aviso_doc")
 
 
 # ==========================================
@@ -1906,7 +2067,7 @@ st.divider()
 
 dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-tab_obj, tab_comp, tab1, tab_casa, tab2, tab_anti, tab3, tab_plant, tab_ia = st.tabs([
+tab_obj, tab_comp, tab1, tab_casa, tab2, tab_anti, tab3, tab_plant, tab_importar, tab_ia = st.tabs([
     "🎯 Objetivos",
     "📊 % de Grasa",
     "🔥 Entrenamiento",
@@ -1915,6 +2076,7 @@ tab_obj, tab_comp, tab1, tab_casa, tab2, tab_anti, tab3, tab_plant, tab_ia = st.
     "🍫 Antiantojos",
     "💡 Consejos",
     "🎨 Plantillas",
+    "📥 Importar",
     "🤖 Asistente IA",
 ])
 
@@ -2224,7 +2386,8 @@ with tab1:
         st.success(_aviso)
     importar_rutina_desde_foto()
 
-    st.caption("Hasta 20 ejercicios por día. Los campos RIR y Nota son opcionales y se imprimen bajo el ejercicio.")
+    st.caption("Hasta 20 ejercicios por día. Los campos RIR y Nota son opcionales y se imprimen bajo el ejercicio. "
+               "¿Ya tienes la rutina en Word, PDF o Excel? Cárgala en la pestaña **📥 Importar**.")
     datos_rutina = {}
     for dia in dias_semana:
         with st.expander(f"Rutina del {dia}", expanded=False):
@@ -2379,10 +2542,17 @@ with tab_casa:
                                mime="application/pdf", width="stretch", key="_cw_descargar")
 
 # ==========================================================
+# 📥 IMPORTAR DESDE DOCUMENTO
+# ==========================================================
+with tab_importar:
+    importar_desde_documento()
+
+# ==========================================================
 # 🍎 NUTRICIÓN
 # ==========================================================
 with tab2:
-    st.caption("Hasta 20 comidas por día. Si cargas las kcal de cada comida, el sistema compara el total con el objetivo calculado.")
+    st.caption("Hasta 20 comidas por día. Si cargas las kcal de cada comida, el sistema compara el total con el objetivo calculado. "
+               "¿Ya tienes el plan en Word, PDF o Excel? Cárgalo en la pestaña **📥 Importar**.")
     datos_nutricion = {}
     for dia in dias_semana:
         with st.expander(f"Comidas del {dia}", expanded=False):
