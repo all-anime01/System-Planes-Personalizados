@@ -9,6 +9,11 @@ import json
 import time
 import uuid
 
+import pandas as pd
+
+import plan_estado as pe
+import rutina_casa as rc
+
 # ==========================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================
@@ -114,12 +119,22 @@ if not acceso_concedido:
                 st.warning("Por favor, ingresa un código.")
             else:
                 st.error("❌ Código inválido. Verifica el código o contacta a tu distribuidor.")
-    st.stop() 
+    st.stop()
 
 
 # ==========================================
 # CÓDIGO PRINCIPAL DE LA APLICACIÓN
 # ==========================================
+
+# Los cambios que hacen la importación por foto y el asistente de IA se aplican aquí,
+# antes de dibujar cualquier campo: Streamlit no permite cambiar un campo ya dibujado.
+_cambios = st.session_state.pop(pe.CLAVE_CAMBIOS, None)
+if _cambios:
+    for _clave, _valor in _cambios.items():
+        if _valor is None:
+            st.session_state.pop(_clave, None)
+        else:
+            st.session_state[_clave] = _valor
 
 def limpiar_texto(texto):
     if not texto: return ""
@@ -495,28 +510,40 @@ CATALOGO_ANTIANTOJOS = [
 
 BACKUP_FILE = "backup_progreso.json"
 
+def estado_para_guardar():
+    """Datos que viajan en los respaldos. Las claves que empiezan con '_' son internas
+    (clave de API, conversación con la IA, editores temporales) y nunca se guardan."""
+    estado = {k: v for k, v in st.session_state.items()
+              if isinstance(v, (str, int, float, bool)) and not str(k).startswith("_")}
+    actual = estado.pop(pe.CLAVE_CASA_ACTUAL, None)
+    if actual:
+        estado[pe.CLAVE_CASA] = actual
+    return estado
+
+def _aplicar_respaldo(data):
+    for k, v in data.items():
+        if not str(k).startswith("_"):
+            st.session_state[k] = v
+    # La rutina en casa vuelve a dibujarse desde cero con lo que trae el respaldo
+    st.session_state.pop(pe.CLAVE_CASA_ACTUAL, None)
+    st.session_state[pe.CLAVE_CASA_VERSION] = int(time.time())
+
 def guardar_progreso_local():
-    estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
     with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-        json.dump(estado_limpio, f, ensure_ascii=False, indent=4)
+        json.dump(estado_para_guardar(), f, ensure_ascii=False, indent=4)
 
 def cargar_progreso_local():
     if os.path.exists(BACKUP_FILE):
         with open(BACKUP_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            for k, v in data.items():
-                st.session_state[k] = v
+            _aplicar_respaldo(json.load(f))
         st.rerun()
 
 def generar_json_descarga():
-    estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (str, int, float, bool))}
-    return json.dumps(estado_limpio, ensure_ascii=False, indent=4)
+    return json.dumps(estado_para_guardar(), ensure_ascii=False, indent=4)
 
 def cargar_desde_archivo(uploaded_file):
     if uploaded_file is not None:
-        data = json.load(uploaded_file)
-        for k, v in data.items():
-            st.session_state[k] = v
+        _aplicar_respaldo(json.load(uploaded_file))
         st.rerun()
 
 BG_IMAGES = {
@@ -557,6 +584,52 @@ DESCRIPCION_PLANTILLAS = {
     "Gold Elite": "Negro con dorado y discos olímpicos. La más lujosa del catálogo.",
 }
 
+PALETAS = {
+    # estilo: (fondo, texto, acento, caja)
+    "Urban Power": ((255, 245, 200), (20, 20, 20), (255, 204, 0), (255, 255, 240)),
+    "Dark Elite": ((20, 20, 20), (240, 240, 240), (200, 10, 50), (40, 40, 40)),
+    "Clean Minimal": ((255, 255, 255), (0, 0, 0), (0, 0, 0), (255, 255, 255)),
+    "Ocean Fitness": ((240, 248, 255), (0, 20, 40), (0, 105, 180), (225, 240, 250)),
+    "Cyber Neon": ((10, 10, 15), (240, 255, 240), (57, 255, 20), (25, 25, 35)),
+    "Eco Wellness": ((248, 253, 248), (40, 60, 40), (100, 180, 60), (240, 250, 240)),
+    "Rose Gold": ((253, 246, 244), (74, 45, 44), (183, 110, 121), (250, 234, 231)),
+    "Violet Luxe": ((24, 18, 35), (238, 233, 248), (139, 92, 246), (43, 33, 60)),
+    "Sunset Energy": ((255, 247, 237), (67, 32, 15), (234, 88, 12), (255, 236, 214)),
+    "Steel Pro": ((237, 241, 245), (24, 34, 45), (45, 72, 99), (255, 255, 255)),
+    "Gold Elite": ((18, 17, 15), (246, 241, 229), (198, 160, 58), (39, 36, 30)),
+}
+
+
+def paleta_estilo(estilo):
+    """(fondo, texto, acento, caja) en RGB para la plantilla elegida."""
+    return PALETAS.get(estilo, PALETAS["Urban Power"])
+
+
+def _luminancia(rgb):
+    canales = []
+    for c in rgb:
+        c = c / 255.0
+        canales.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * canales[0] + 0.7152 * canales[1] + 0.0722 * canales[2]
+
+
+def _contraste(c1, c2):
+    l1, l2 = sorted((_luminancia(c1), _luminancia(c2)), reverse=True)
+    return (l1 + 0.05) / (l2 + 0.05)
+
+
+def paleta_rutina_casa(estilo):
+    """Paleta para el PDF de rutina en casa, con el texto sobre el acento siempre legible."""
+    c_bg, c_texto, c_acento, c_caja = paleta_estilo(estilo)
+    blanco, negro = (255, 255, 255), (0, 0, 0)
+    return {
+        "bg": c_bg, "texto": c_texto, "acento": c_acento, "caja": c_caja,
+        "sobre_acento": blanco if _contraste(c_acento, blanco) >= _contraste(c_acento, negro) else negro,
+        "acento_ilegible": _contraste(c_acento, c_caja) < 2.5,
+        "oscuro": estilo in ESTILOS_OSCUROS,
+    }
+
+
 def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cliente, logo_file, estilo, formato, tipo_fondo,
                             inc_entreno, inc_nutri, inc_consejos,
                             objetivos=None, perfil=None, antiantojos=None,
@@ -572,28 +645,7 @@ def generar_pdf_profesional(datos_rutina, datos_nutricion, consejos, config, cli
     bg_filename = BG_IMAGES.get(estilo)
     usar_textura = (tipo_fondo == "Personalizado (Textura/Imagen)")
 
-    if estilo == "Dark Elite":
-        c_bg, c_texto, c_acento, c_caja = (20, 20, 20), (240, 240, 240), (200, 10, 50), (40, 40, 40)
-    elif estilo == "Clean Minimal":
-        c_bg, c_texto, c_acento, c_caja = (255, 255, 255), (0, 0, 0), (0, 0, 0), (255, 255, 255)
-    elif estilo == "Ocean Fitness":
-        c_bg, c_texto, c_acento, c_caja = (240, 248, 255), (0, 20, 40), (0, 105, 180), (225, 240, 250)
-    elif estilo == "Cyber Neon":
-        c_bg, c_texto, c_acento, c_caja = (10, 10, 15), (240, 255, 240), (57, 255, 20), (25, 25, 35)
-    elif estilo == "Eco Wellness":
-        c_bg, c_texto, c_acento, c_caja = (248, 253, 248), (40, 60, 40), (100, 180, 60), (240, 250, 240)
-    elif estilo == "Rose Gold":
-        c_bg, c_texto, c_acento, c_caja = (253, 246, 244), (74, 45, 44), (183, 110, 121), (250, 234, 231)
-    elif estilo == "Violet Luxe":
-        c_bg, c_texto, c_acento, c_caja = (24, 18, 35), (238, 233, 248), (139, 92, 246), (43, 33, 60)
-    elif estilo == "Sunset Energy":
-        c_bg, c_texto, c_acento, c_caja = (255, 247, 237), (67, 32, 15), (234, 88, 12), (255, 236, 214)
-    elif estilo == "Steel Pro":
-        c_bg, c_texto, c_acento, c_caja = (237, 241, 245), (24, 34, 45), (45, 72, 99), (255, 255, 255)
-    elif estilo == "Gold Elite":
-        c_bg, c_texto, c_acento, c_caja = (18, 17, 15), (246, 241, 229), (198, 160, 58), (39, 36, 30)
-    else: 
-        c_bg, c_texto, c_acento, c_caja = (255, 245, 200), (20, 20, 20), (255, 204, 0), (255, 255, 240)
+    c_bg, c_texto, c_acento, c_caja = paleta_estilo(estilo)
 
     def obtener_ancho_caja():
         return pdf.w - 30
@@ -1390,6 +1442,344 @@ def seleccionar_plantilla(nombre):
     st.session_state["k_estilo"] = nombre
 
 
+# ==========================================
+# 🤖 ACCESO A LA IA
+# ==========================================
+def clave_api_del_servidor():
+    """Clave definida en secrets de Streamlit o variable de entorno (no la del usuario)."""
+    try:
+        clave = st.secrets.get("ANTHROPIC_API_KEY")
+    except Exception:
+        clave = None
+    return clave or os.environ.get("ANTHROPIC_API_KEY")
+
+
+def ia_disponible():
+    return bool(clave_api_del_servidor() or str(st.session_state.get("_ia_api_key", "")).strip())
+
+
+def cliente_ia():
+    import ia_asistente  # se importa al usarse: la app funciona aunque falte el paquete
+    clave = str(st.session_state.get("_ia_api_key", "")).strip() or clave_api_del_servidor()
+    return ia_asistente.crear_cliente(clave)
+
+
+def aviso_sin_ia(funcion):
+    st.info(f"Para usar {funcion} agrega tu clave de API en el panel lateral → **🤖 Inteligencia Artificial**.")
+
+
+def aplicar_ahora(cambios):
+    """Aplica cambios de claves que NO son campos del formulario (ej. la rutina en casa)."""
+    for clave, valor in cambios.items():
+        if valor is None:
+            st.session_state.pop(clave, None)
+        else:
+            st.session_state[clave] = valor
+
+
+# ==========================================
+# 📋 TABLAS EDITABLES
+# ==========================================
+COLUMNAS_GYM = ["nombre", "series", "reps", "descanso_seg", "peso_kg", "rir", "nota"]
+CONFIG_TABLA_GYM = {
+    "nombre": st.column_config.TextColumn("Ejercicio", width="large", required=True),
+    "series": st.column_config.TextColumn("Series", width="small"),
+    "reps": st.column_config.TextColumn("Reps", width="small"),
+    "descanso_seg": st.column_config.TextColumn("Descanso (s)", width="small"),
+    "peso_kg": st.column_config.TextColumn("Peso (kg)", width="small"),
+    "rir": st.column_config.TextColumn("RIR", width="small"),
+    "nota": st.column_config.TextColumn("Nota / técnica", width="medium"),
+}
+CONFIG_TABLA_CASA = {
+    "nombre": st.column_config.TextColumn("Ejercicio", width="medium", required=True),
+    "series": st.column_config.TextColumn("Series / vueltas", width="small"),
+    "reps_o_tiempo": st.column_config.TextColumn("Reps o tiempo", width="small"),
+    "descanso": st.column_config.TextColumn("Descanso", width="small"),
+    "zona": st.column_config.SelectboxColumn("Zona", options=rc.ZONAS, width="small"),
+    "indicaciones": st.column_config.TextColumn("Indicación técnica (sale en el PDF)", width="large"),
+}
+
+
+def _celda(valor):
+    try:
+        if valor is None or pd.isna(valor):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(valor).strip()
+
+
+def df_ejercicios(ejercicios, columnas):
+    return pd.DataFrame([{c: _celda(e.get(c, "")) for c in columnas} for e in ejercicios],
+                        columns=columnas, dtype="object")
+
+
+def filas_de_tabla(df):
+    """Filas editadas con nombre, como lista de diccionarios de texto."""
+    filas = []
+    for fila in df.to_dict("records"):
+        limpia = {k: _celda(v) for k, v in fila.items()}
+        if limpia.get("nombre"):
+            filas.append(limpia)
+    return filas
+
+
+def df_casa(ejercicios):
+    df = df_ejercicios(ejercicios, ["nombre", "series", "reps_o_tiempo", "descanso", "zona", "indicaciones"])
+    df["zona"] = [z if z in rc.ZONAS else None for z in df["zona"]]
+    return df
+
+
+# ==========================================
+# 📸 IMPORTAR RUTINA DESDE FOTO
+# ==========================================
+def importar_rutina_desde_foto():
+    resultado = st.session_state.get("_ocr_resultado")
+    with st.expander("📸 Importar rutina desde una foto (hoja, cuaderno, pizarra o impresa)",
+                     expanded=bool(resultado)):
+        if not ia_disponible():
+            aviso_sin_ia("la lectura de fotos")
+            return
+        st.caption("Toma o sube la foto de la rutina escrita. La IA la transcribe, tú revisas y corriges, "
+                   "y con un clic queda cargada en el plan.")
+        lote = st.session_state.get("_ocr_lote", 0)
+        origen = st.radio("Origen de la imagen", ["📁 Subir fotos", "📷 Tomar foto con la cámara"],
+                          horizontal=True, key="_ocr_origen", label_visibility="collapsed")
+        imagenes = []
+        if origen.startswith("📁"):
+            archivos = st.file_uploader("Fotos de la rutina (si son varias páginas, súbelas todas)",
+                                        type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True,
+                                        key=f"_ocr_archivos_{lote}")
+            imagenes = [a.getvalue() for a in (archivos or [])]
+        else:
+            foto = st.camera_input("Encuadra la hoja completa y con buena luz", key=f"_ocr_camara_{lote}")
+            if foto:
+                imagenes = [foto.getvalue()]
+        indicaciones = st.text_input(
+            "Indicaciones para la lectura (opcional)", key="_ocr_indicaciones",
+            placeholder="Ej: el 'Día 1' es lunes · los pesos están en libras · ignora lo tachado")
+
+        if st.button("🔍 Leer rutina de la foto", type="primary", disabled=not imagenes, key="_ocr_leer"):
+            import ia_asistente
+            with st.spinner("Leyendo la rutina... puede tardar unos segundos"):
+                try:
+                    st.session_state["_ocr_resultado"] = ia_asistente.extraer_rutina_de_imagenes(
+                        cliente_ia(), imagenes, indicaciones)
+                    st.session_state["_ocr_ver"] = st.session_state.get("_ocr_ver", 0) + 1
+                    st.rerun()
+                except ia_asistente.ErrorIA as e:
+                    st.error(str(e))
+
+        if resultado:
+            revisar_importacion(resultado)
+
+
+def _descartar_importacion():
+    st.session_state.pop("_ocr_resultado", None)
+    st.session_state["_ocr_lote"] = st.session_state.get("_ocr_lote", 0) + 1
+
+
+def revisar_importacion(resultado):
+    ver = st.session_state.get("_ocr_ver", 0)
+    observaciones = (resultado.get("observaciones") or "").strip()
+    bloques = resultado.get("bloques") or []
+    st.divider()
+    if not resultado.get("es_rutina") or not bloques:
+        st.warning("No encontré una rutina en la imagen. " + observaciones)
+        if st.button("Descartar", key="_ocr_descartar_vacio"):
+            _descartar_importacion()
+            st.rerun()
+        return
+
+    st.markdown("##### ✍️ Revisa lo que se leyó")
+    if observaciones:
+        st.info("🔎 **Para revisar:** " + observaciones)
+    st.caption("Corrige directamente en las tablas: puedes editar celdas, agregar o borrar filas.")
+
+    # Los bloques sin día ("Día 1", "Rutina A") se reparten en una semana equilibrada
+    ocupados = {b["dia_semana"] for b in bloques if b["dia_semana"] in pe.DIAS}
+    sugeridos = rc.DIAS_POR_FRECUENCIA.get(min(len(bloques), 7), pe.DIAS)
+    libres = [d for d in sugeridos if d not in ocupados] + \
+             [d for d in pe.DIAS if d not in ocupados and d not in sugeridos]
+    opciones_dia = pe.DIAS + ["No importar"]
+
+    asignaciones = []
+    for idx, bloque in enumerate(bloques):
+        if bloque["dia_semana"] in pe.DIAS:
+            sugerido = bloque["dia_semana"]
+        else:
+            sugerido = libres.pop(0) if libres else "No importar"
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([1.3, 1.2, 2.5])
+            c1.markdown(f"**{bloque.get('etiqueta') or f'Bloque {idx + 1}'}**  \n"
+                        f"{len(bloque.get('ejercicios', []))} ejercicios leídos")
+            dia = c2.selectbox("Asignar a", opciones_dia, index=opciones_dia.index(sugerido),
+                               key=f"_ocr_dia_{ver}_{idx}")
+            enfoque = c3.text_input("Enfoque del día", bloque.get("enfoque", ""), key=f"_ocr_enf_{ver}_{idx}")
+            tabla = st.data_editor(df_ejercicios(bloque.get("ejercicios", []), COLUMNAS_GYM),
+                                   column_config=CONFIG_TABLA_GYM, num_rows="dynamic", hide_index=True,
+                                   width="stretch", key=f"_ocr_tabla_{ver}_{idx}")
+            asignaciones.append((dia, enfoque, filas_de_tabla(tabla)))
+
+    agrupado = {}
+    for dia, enfoque, ejercicios in asignaciones:
+        if dia == "No importar" or not ejercicios:
+            continue
+        if dia in agrupado:
+            agrupado[dia] = (agrupado[dia][0] or enfoque, agrupado[dia][1] + ejercicios)
+        else:
+            agrupado[dia] = (enfoque, ejercicios)
+    if len(agrupado) < len([a for a in asignaciones if a[0] != "No importar" and a[2]]):
+        st.caption("ℹ️ Varios bloques van al mismo día: se unirán en el orden en que aparecen.")
+
+    c1, c2 = st.columns(2)
+    destino = c1.radio("¿Dónde la cargo?", ["🔥 Plan de entrenamiento (gimnasio)", "🏠 Rutina en casa"],
+                       key="_ocr_destino")
+    modo = c2.radio("Si el día ya tiene ejercicios", ["Reemplazarlos", "Agregar al final"], key="_ocr_modo")
+    modo_pe = "agregar" if modo.startswith("Agregar") else "reemplazar"
+
+    b1, b2 = st.columns([3, 1])
+    if b1.button("✅ Cargar en el plan", type="primary", disabled=not agrupado, width="stretch",
+                 key="_ocr_cargar"):
+        total = sum(len(ej) for _, ej in agrupado.values())
+        if destino.startswith("🔥"):
+            estado = pe.VistaEstado(st.session_state)
+            cambios = {}
+            for dia, (enfoque, ejercicios) in agrupado.items():
+                cambios.update(pe.cambios_rutina_dia(estado, dia, enfoque, ejercicios, modo_pe))
+            st.session_state[pe.CLAVE_CAMBIOS] = cambios
+            donde = "en el plan de entrenamiento"
+        else:
+            plan = rc.normalizar_plan(pe.leer_rutina_casa(st.session_state) or rc.plan_vacio())
+            por_dia = {d["dia"]: d for d in plan["dias"]}
+            for dia, (enfoque, ejercicios) in agrupado.items():
+                nuevos = []
+                for e in ejercicios:
+                    ficha = rc.buscar_en_biblioteca(e["nombre"])
+                    nuevos.append({
+                        "nombre": e["nombre"], "series": e["series"], "reps_o_tiempo": e["reps"],
+                        "descanso": f"{e['descanso_seg']} s" if e["descanso_seg"].isdigit() else e["descanso_seg"],
+                        "indicaciones": e["nota"] or (ficha[5] if ficha else ""),
+                        "zona": ficha[1] if ficha else "",
+                    })
+                if dia in por_dia and modo_pe == "agregar":
+                    por_dia[dia]["ejercicios"] += nuevos
+                    por_dia[dia]["enfoque"] = por_dia[dia]["enfoque"] or enfoque
+                else:
+                    por_dia[dia] = {"dia": dia, "enfoque": enfoque,
+                                    "formato": por_dia.get(dia, {}).get("formato", ""), "ejercicios": nuevos}
+            plan["dias"] = list(por_dia.values())
+            aplicar_ahora(pe.cambios_rutina_casa(pe.VistaEstado(st.session_state), rc.normalizar_plan(plan)))
+            donde = "en la pestaña 🏠 Rutina en Casa"
+        st.session_state["_aviso_import"] = (f"✅ Se cargaron {total} ejercicios {donde}: "
+                                             f"{', '.join(agrupado)}. Revisa cada día abajo.")
+        _descartar_importacion()
+        st.rerun()
+    if b2.button("Descartar", width="stretch", key="_ocr_descartar"):
+        _descartar_importacion()
+        st.rerun()
+
+
+# ==========================================
+# 🤖 HERRAMIENTAS DEL ASISTENTE
+# ==========================================
+OPCIONES_CLIENTE = {
+    "sexo": ["Hombre", "Mujer"],
+    "actividad": list(FACTORES_ACTIVIDAD),
+    "objetivo": list(OBJETIVOS_META),
+    "nivel": list(PROGRESION_POR_NIVEL),
+}
+OPCIONES_HERRAMIENTAS = {
+    "cliente": OPCIONES_CLIENTE,
+    "zonas_casa": rc.ZONAS,
+    "niveles_casa": rc.NIVELES,
+    "equipos_casa": rc.EQUIPOS,
+}
+ETIQUETAS_ACCIONES = {
+    "actualizar_cliente": "👤 Perfil del cliente",
+    "establecer_rutina_dia": "🔥 Entrenamiento",
+    "establecer_comidas_dia": "🍎 Nutrición",
+    "establecer_consejos": "💡 Consejos",
+    "crear_rutina_casa": "🏠 Rutina en casa",
+}
+
+
+def vista_del_plan(estado, seccion, calculos):
+    datos = {}
+    if seccion in ("todo", "cliente"):
+        datos["cliente"] = pe.leer_cliente(estado)
+    if seccion in ("todo", "calculos"):
+        datos["calculos_del_sistema"] = calculos
+    if seccion in ("todo", "entrenamiento"):
+        datos["entrenamiento"] = {d: pe.leer_rutina_dia(estado, d) for d in pe.DIAS}
+    if seccion in ("todo", "nutricion"):
+        datos["nutricion"] = {d: pe.leer_comidas_dia(estado, d) for d in pe.DIAS}
+    if seccion in ("todo", "consejos"):
+        datos["consejos"] = estado.get("k_consejos", "")
+    if seccion in ("todo", "rutina_casa"):
+        datos["rutina_casa"] = pe.leer_rutina_casa(estado) or "Todavía no hay rutina en casa."
+    return json.dumps(datos, ensure_ascii=False, default=str)
+
+
+def ejecutar_herramienta_ia(nombre, entrada, estado, calculos):
+    """Ejecuta una herramienta del asistente. Devuelve (texto_resultado, es_error)."""
+    if nombre == "ver_plan":
+        return vista_del_plan(estado, entrada.get("seccion", "todo"), calculos), False
+
+    if nombre == "actualizar_cliente":
+        campos = {c["campo"]: c["valor"] for c in entrada.get("cambios", [])}
+        cambios, errores = pe.cambios_cliente(campos, OPCIONES_CLIENTE)
+        estado.registrar(cambios)
+        partes = []
+        if cambios:
+            partes.append("Actualizado: " + ", ".join(c for c in campos if pe.CAMPOS_CLIENTE.get(c) in cambios))
+        partes += errores
+        return " | ".join(partes) or "Sin cambios.", bool(errores) and not cambios
+
+    if nombre == "establecer_rutina_dia":
+        dia = entrada["dia"]
+        estado.registrar(pe.cambios_rutina_dia(estado, dia, entrada.get("enfoque"),
+                                               entrada.get("ejercicios", []), entrada.get("modo", "reemplazar")))
+        actual = pe.leer_rutina_dia(estado, dia)
+        return f"{dia} ({actual['enfoque'] or 'sin enfoque'}): {len(actual['ejercicios'])} ejercicios cargados.", False
+
+    if nombre == "establecer_comidas_dia":
+        dia = entrada["dia"]
+        estado.registrar(pe.cambios_comidas_dia(estado, dia, entrada.get("comidas", []),
+                                                entrada.get("modo", "reemplazar")))
+        return f"{dia}: {len(pe.leer_comidas_dia(estado, dia))} comidas cargadas.", False
+
+    if nombre == "establecer_consejos":
+        texto = str(entrada.get("texto", "")).strip()
+        if entrada.get("modo") == "agregar" and str(estado.get("k_consejos", "")).strip():
+            texto = str(estado.get("k_consejos")).rstrip() + "\n\n" + texto
+        estado.registrar({"k_consejos": texto})
+        return "Consejos actualizados.", False
+
+    if nombre == "crear_rutina_casa":
+        plan = rc.normalizar_plan(entrada)
+        if not plan["dias"]:
+            return "La rutina no tiene días válidos; indica al menos un día con ejercicios.", True
+        estado.registrar(pe.cambios_rutina_casa(estado, plan))
+        total = sum(len(d["ejercicios"]) for d in plan["dias"])
+        return f"Rutina en casa creada: {len(plan['dias'])} días y {total} ejercicios.", False
+
+    return f"Herramienta desconocida: {nombre}", True
+
+
+def resumen_acciones(acciones):
+    etiquetas = []
+    for a in acciones:
+        if a["error"] or a["herramienta"] not in ETIQUETAS_ACCIONES:
+            continue
+        etiqueta = ETIQUETAS_ACCIONES[a["herramienta"]]
+        if a.get("dia"):
+            etiqueta += f" · {a['dia']}"
+        if etiqueta not in etiquetas:
+            etiquetas.append(etiqueta)
+    return etiquetas
+
+
 # --- PANEL LATERAL ---
 with st.sidebar:
     if os.path.exists(ARCHIVO_LICENCIA_LOCAL):
@@ -1462,6 +1852,21 @@ with st.sidebar:
         st.caption("Vista aproximada. Instala `pypdfium2` para ver el PDF real.")
         st.markdown(construir_preview_html(estilo_elegido, formato_elegido), unsafe_allow_html=True)
 
+    st.divider()
+
+    st.header("🤖 Inteligencia Artificial")
+    if clave_api_del_servidor():
+        st.success("IA conectada (clave configurada en el servidor).")
+    else:
+        st.text_input("Clave de API de Anthropic", type="password", key="_ia_api_key",
+                      placeholder="sk-ant-...",
+                      help="Activa la lectura de rutinas desde fotos y el asistente IA. "
+                           "Solo se usa en esta sesión: no se guarda en los respaldos ni en las plantillas.")
+        if st.session_state.get("_ia_api_key"):
+            st.caption("✅ Clave cargada para esta sesión.")
+        else:
+            st.caption("Consíguela en console.anthropic.com → API Keys.")
+
 
 # --- PERFIL DEL CLIENTE ---
 st.subheader("👤 Perfil del Cliente")
@@ -1501,14 +1906,16 @@ st.divider()
 
 dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-tab_obj, tab_comp, tab1, tab2, tab_anti, tab3, tab_plant = st.tabs([
+tab_obj, tab_comp, tab1, tab_casa, tab2, tab_anti, tab3, tab_plant, tab_ia = st.tabs([
     "🎯 Objetivos",
     "📊 % de Grasa",
     "🔥 Entrenamiento",
+    "🏠 Rutina en Casa",
     "🍎 Nutrición",
     "🍫 Antiantojos",
     "💡 Consejos",
-    "🎨 Plantillas"
+    "🎨 Plantillas",
+    "🤖 Asistente IA",
 ])
 
 # ==========================================================
@@ -1812,26 +2219,164 @@ with tab_obj:
 # 🔥 ENTRENAMIENTO
 # ==========================================================
 with tab1:
+    _aviso = st.session_state.pop("_aviso_import", None)
+    if _aviso:
+        st.success(_aviso)
+    importar_rutina_desde_foto()
+
     st.caption("Hasta 20 ejercicios por día. Los campos RIR y Nota son opcionales y se imprimen bajo el ejercicio.")
     datos_rutina = {}
     for dia in dias_semana:
         with st.expander(f"Rutina del {dia}", expanded=False):
             enfoque_dia = st.text_input("💪 Músculo o Enfoque del Día (Ej: Pierna - Cuádriceps)", key=f"enf_{dia}")
-            n_ej = st.number_input(f"Cantidad ejercicios {dia} (Máx 20)", 1, 20, 4, key=f"ne_{dia}")
+            # Los valores iniciales van por session_state (no como parámetro del campo) para
+            # que la importación por foto y el asistente puedan escribirlos sin conflictos.
+            st.session_state.setdefault(f"ne_{dia}", pe.DEFECTO_CANTIDAD)
+            n_ej = st.number_input(f"Cantidad ejercicios {dia} (Máx 20)", 1, 20, key=f"ne_{dia}")
             lista_ej = []
             for i in range(int(n_ej)):
+                for _pref, _defecto in pe.DEFECTOS_EJERCICIO.items():
+                    st.session_state.setdefault(f"{_pref}_{dia}_{i}", _defecto)
                 col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 0.9, 0.9, 0.9, 1, 0.9, 2.6])
                 nombre = col1.text_input("Ejercicio", key=f"n_{dia}_{i}")
-                s = col2.text_input("Sets", "4", key=f"s_{dia}_{i}")
-                r = col3.text_input("Reps", "12", key=f"r_{dia}_{i}")
-                seg = col4.text_input("Seg", "60", key=f"g_{dia}_{i}")
-                p = col5.text_input("Peso (kg)", "0", key=f"p_{dia}_{i}")
+                s = col2.text_input("Sets", key=f"s_{dia}_{i}")
+                r = col3.text_input("Reps", key=f"r_{dia}_{i}")
+                seg = col4.text_input("Seg", key=f"g_{dia}_{i}")
+                p = col5.text_input("Peso (kg)", key=f"p_{dia}_{i}")
                 rir = col6.text_input("RIR", "", key=f"rir_{dia}_{i}", help="Reps en reserva: cuántas repeticiones podría hacer todavía.")
                 nota = col7.text_input("Nota / técnica", key=f"nt_{dia}_{i}")
                 lista_ej.append({"nombre": nombre, "s": s, "r": r, "seg": seg,
                                  "peso (kg)": p, "rir": rir, "nota": nota})
 
             datos_rutina[dia] = {"enfoque": enfoque_dia, "items": lista_ej}
+
+# ==========================================================
+# 🏠 RUTINA EN CASA
+# ==========================================================
+configuracion_pdf = {"entrenador": entrenador, "redes": redes, "fecha_inicio": fecha_in, "fecha_fin": fecha_out}
+
+with tab_casa:
+    st.markdown("#### 🏠 Rutina para entrenar en casa")
+    st.caption("Sin gimnasio y con el material que tenga el cliente. Se entrega en un PDF propio: portada, "
+               "una página por día con tarjetas de cada ejercicio y hoja de seguimiento, con los colores y el "
+               "logo de tu plantilla.")
+
+    plan_casa = pe.leer_rutina_casa(st.session_state)
+    ver_casa = st.session_state.get(pe.CLAVE_CASA_VERSION, 0)
+
+    with st.expander("✨ Generar una rutina automáticamente", expanded=plan_casa is None):
+        g1, g2, g3 = st.columns(3)
+        casa_frec = g1.number_input("Días por semana", 1, 6, value=min(int(dias_disp), 6), key="_cg_frec")
+        casa_nivel = g2.selectbox("Nivel", rc.NIVELES,
+                                  index=rc.NIVELES.index(nivel_exp) if nivel_exp in rc.NIVELES else 1,
+                                  key="_cg_nivel")
+        casa_dur = g3.selectbox("Minutos por sesión", rc.DURACIONES, index=1, key="_cg_dur")
+        g4, g5 = st.columns([2, 1])
+        casa_equipo = g4.multiselect("Material disponible", [e for e in rc.EQUIPOS if e != "Sin equipo"],
+                                     key="_cg_equipo", placeholder="Ninguno: solo peso corporal")
+        lista_objetivos = list(OBJETIVOS_META)
+        casa_obj = g5.selectbox("Objetivo", lista_objetivos, index=lista_objetivos.index(objetivo_principal),
+                                key="_cg_obj")
+        if str(limitaciones).strip():
+            st.warning(f"⚠️ Limitaciones registradas: *{limitaciones.strip()}*. El generador no las conoce: revisa "
+                       "los ejercicios o pídele al 🤖 Asistente IA que adapte la rutina.")
+        if st.button("✨ Generar rutina" if plan_casa is None else "✨ Generar de nuevo (reemplaza la actual)",
+                     type="primary", key="_cg_generar"):
+            nuevo_plan = rc.generar_rutina_casa(casa_frec, casa_nivel, casa_dur, casa_equipo, casa_obj)
+            aplicar_ahora(pe.cambios_rutina_casa(pe.VistaEstado(st.session_state), nuevo_plan))
+            st.rerun()
+
+    plan_casa_actual = None
+    if plan_casa is None:
+        st.info("Todavía no hay rutina en casa. Genérala arriba, impórtala desde una foto (pestaña "
+                "🔥 Entrenamiento) o pídesela al 🤖 Asistente IA.")
+    else:
+        plan_casa = rc.normalizar_plan(plan_casa)
+        with st.container(border=True):
+            st.markdown("##### 📋 Datos generales")
+            k1, k2, k3 = st.columns([2.2, 1, 1])
+            casa_titulo = k1.text_input("Subtítulo de la portada", plan_casa["titulo"], key=f"_cw_titulo_{ver_casa}")
+            casa_nivel_c = k2.selectbox("Nivel", rc.NIVELES,
+                                        index=rc.NIVELES.index(plan_casa["nivel"]) if plan_casa["nivel"] in rc.NIVELES else 1,
+                                        key=f"_cw_nivel_{ver_casa}")
+            casa_dur_c = k3.number_input("Minutos por sesión", 5, 180, value=int(plan_casa["duracion_min"]),
+                                         step=5, key=f"_cw_dur_{ver_casa}")
+            casa_equipo_c = st.multiselect("Material", rc.EQUIPOS,
+                                           default=[e for e in plan_casa["equipo"] if e in rc.EQUIPOS],
+                                           key=f"_cw_equipo_{ver_casa}")
+            a1, a2 = st.columns(2)
+            casa_calent = a1.text_area("Calentamiento", plan_casa["calentamiento"], height=110,
+                                       key=f"_cw_calent_{ver_casa}")
+            casa_enfr = a2.text_area("Vuelta a la calma", plan_casa["enfriamiento"], height=110,
+                                     key=f"_cw_enfr_{ver_casa}")
+            casa_notas = st.text_area("Notas del coach para el cliente (opcional, salen en el PDF)",
+                                      plan_casa["notas"], height=70, key=f"_cw_notas_{ver_casa}")
+
+        st.markdown("##### 🗓️ Sesiones")
+        dias_casa_editados, dia_a_quitar = [], None
+        for d in plan_casa["dias"]:
+            with st.expander(f"{d['dia']} — {d['enfoque'] or 'Sin enfoque'}  ·  {len(d['ejercicios'])} ejercicios"):
+                e1, e2 = st.columns([1, 2])
+                enf_casa = e1.text_input("Enfoque", d["enfoque"], key=f"_cw_enf_{d['dia']}_{ver_casa}")
+                fmt_casa = e2.text_input("Cómo se ejecuta (circuito, series, descansos)", d["formato"],
+                                         key=f"_cw_fmt_{d['dia']}_{ver_casa}")
+                tabla_casa = st.data_editor(df_casa(d["ejercicios"]), column_config=CONFIG_TABLA_CASA,
+                                            num_rows="dynamic", hide_index=True, width="stretch",
+                                            key=f"_cw_tabla_{d['dia']}_{ver_casa}")
+                if st.button(f"🗑️ Quitar {d['dia']}", key=f"_cw_quitar_{d['dia']}_{ver_casa}"):
+                    dia_a_quitar = d["dia"]
+                dias_casa_editados.append({"dia": d["dia"], "enfoque": enf_casa, "formato": fmt_casa,
+                                           "ejercicios": filas_de_tabla(tabla_casa)})
+
+        dia_a_agregar = None
+        dias_libres = [x for x in dias_semana if x not in {d["dia"] for d in plan_casa["dias"]}]
+        if dias_libres:
+            n1, n2 = st.columns([2, 1])
+            nuevo_dia = n1.selectbox("Agregar una sesión", dias_libres, key=f"_cw_nuevo_{ver_casa}",
+                                     label_visibility="collapsed")
+            if n2.button("➕ Agregar sesión", width="stretch", key=f"_cw_agregar_{ver_casa}"):
+                dia_a_agregar = nuevo_dia
+
+        plan_casa_actual = rc.normalizar_plan({
+            "titulo": casa_titulo, "nivel": casa_nivel_c, "duracion_min": casa_dur_c,
+            "equipo": casa_equipo_c or ["Sin equipo"], "objetivo": plan_casa.get("objetivo", ""),
+            "calentamiento": casa_calent, "enfriamiento": casa_enfr, "notas": casa_notas,
+            "dias": dias_casa_editados,
+        })
+        st.session_state[pe.CLAVE_CASA_ACTUAL] = json.dumps(plan_casa_actual, ensure_ascii=False)
+
+        if dia_a_quitar or dia_a_agregar:
+            plan_nuevo = dict(plan_casa_actual)
+            plan_nuevo["dias"] = [d for d in plan_casa_actual["dias"] if d["dia"] != dia_a_quitar]
+            if dia_a_agregar:
+                plan_nuevo["dias"].append({"dia": dia_a_agregar, "enfoque": "", "formato": "", "ejercicios": []})
+            aplicar_ahora(pe.cambios_rutina_casa(pe.VistaEstado(st.session_state), rc.normalizar_plan(plan_nuevo)))
+            st.rerun()
+
+        st.divider()
+        st.markdown("##### 📄 Entregar al cliente")
+        st.caption(f"Plantilla: **{estilo_elegido}**{' · con tu logo' if logo_subido else ''}. "
+                   "Cambia el tema en el panel lateral.")
+        if st.button("📄 GENERAR PDF DE RUTINA EN CASA", type="primary", width="stretch", key="_cw_pdf"):
+            if not any(d["ejercicios"] for d in plan_casa_actual["dias"]):
+                st.error("Agrega al menos un ejercicio antes de generar el PDF.")
+            else:
+                with st.spinner("Diseñando el PDF..."):
+                    st.session_state["_pdf_casa"] = rc.generar_pdf_rutina_casa(
+                        plan_casa_actual, {"nombre": c_nombre}, configuracion_pdf,
+                        paleta_rutina_casa(estilo_elegido),
+                        logo_subido.getvalue() if logo_subido else None)
+        pdf_casa = st.session_state.get("_pdf_casa")
+        if pdf_casa:
+            muestras = renderizar_paginas_pdf(pdf_casa, (0, 1), 1.3)
+            if muestras:
+                columnas_pdf = st.columns(len(muestras))
+                for col_pdf, img_pdf in zip(columnas_pdf, muestras):
+                    col_pdf.image(img_pdf, width="stretch")
+            nombre_pdf_casa = (f"Rutina_Casa_{c_nombre.strip().replace(' ', '_')}.pdf"
+                               if c_nombre.strip() else "Rutina_en_Casa.pdf")
+            st.download_button(f"📥 Descargar {nombre_pdf_casa}", data=pdf_casa, file_name=nombre_pdf_casa,
+                               mime="application/pdf", width="stretch", key="_cw_descargar")
 
 # ==========================================================
 # 🍎 NUTRICIÓN
@@ -1841,7 +2386,8 @@ with tab2:
     datos_nutricion = {}
     for dia in dias_semana:
         with st.expander(f"Comidas del {dia}", expanded=False):
-            n_comidas = st.number_input(f"Cantidad comidas {dia} (Máx 20)", 1, 20, 4, key=f"nc_{dia}")
+            st.session_state.setdefault(f"nc_{dia}", pe.DEFECTO_CANTIDAD)
+            n_comidas = st.number_input(f"Cantidad comidas {dia} (Máx 20)", 1, 20, key=f"nc_{dia}")
             lista_comidas = []
             total_kcal_dia = 0
             for i in range(int(n_comidas)):
@@ -1986,3 +2532,82 @@ if st.button("🚀 GENERAR PDF PROFESIONAL", use_container_width=True):
             file_name=nombre_archivo,
             mime="application/pdf"
         )
+
+
+# ==========================================================
+# 🤖 ASISTENTE IA — va al final: así ve el plan ya calculado
+# ==========================================================
+SUGERENCIAS_IA = [
+    "Revisa el plan completo y dime qué falta antes de entregarlo",
+    "Arma la rutina de gimnasio de la semana según su objetivo, nivel y días disponibles",
+    "Crea una rutina en casa de 3 días, 30 minutos, solo con peso corporal",
+    "Propón un menú de lunes que cuadre con sus calorías y macros",
+]
+
+with tab_ia:
+    st.markdown("#### 🤖 Asistente IA")
+    st.caption("Pídele en tus palabras que revise, cree o ajuste el plan del cliente. Trabaja directamente sobre "
+               "las pestañas: lo que haga lo verás al instante y lo puedes corregir a mano.")
+
+    if not ia_disponible():
+        aviso_sin_ia("el asistente")
+    else:
+        import ia_asistente
+
+        vista_chat = st.session_state.setdefault("_ia_vista", [])
+        historial_ia = st.session_state.setdefault("_ia_historial", [])
+        pedido = None
+
+        if not vista_chat:
+            st.markdown("**Prueba con:**")
+            columnas_sug = st.columns(2)
+            for i_sug, sugerencia in enumerate(SUGERENCIAS_IA):
+                if columnas_sug[i_sug % 2].button(sugerencia, key=f"_ia_sug_{i_sug}", width="stretch"):
+                    pedido = sugerencia
+
+        caja_chat = st.container(height=520) if vista_chat else st.container()
+        with caja_chat:
+            for mensaje in vista_chat:
+                with st.chat_message(mensaje["rol"]):
+                    st.markdown(mensaje["texto"])
+                    if mensaje.get("acciones"):
+                        st.caption("Cambios aplicados: " + "  ·  ".join(mensaje["acciones"]))
+
+        escrito = st.chat_input("Escribe una instrucción para el asistente…", key="_ia_input")
+        pedido = pedido or escrito
+
+        if vista_chat and st.button("🧹 Nueva conversación", key="_ia_nueva"):
+            st.session_state["_ia_vista"] = []
+            st.session_state["_ia_historial"] = []
+            st.rerun()
+
+        if pedido:
+            calculos_ia = {
+                "porcentaje_grasa": perfil["grasa"], "categoria_grasa": perfil["categoria"],
+                "metodo_grasa": perfil["metodo_usado"], "imc": perfil["imc"], "imc_categoria": perfil["imc_cat"],
+                "masa_magra_kg": perfil["masa_magra"], "metabolismo_basal_kcal": perfil["tmb"],
+                "gasto_total_kcal": perfil["tdee"], "calorias_objetivo_kcal": perfil["kcal"],
+                "macros_g": perfil["macros"], "agua_litros": perfil["agua"],
+                "ritmo_cambio_kg_semana": perfil["ritmo_kg"], "semanas_estimadas": semanas,
+                "distribucion_sugerida": split_sugerido, "progresion_sugerida": PROGRESION_POR_NIVEL[nivel_exp],
+            }
+            estado_ia = pe.VistaEstado(st.session_state)
+            vista_chat.append({"rol": "user", "texto": pedido})
+            with caja_chat:
+                with st.chat_message("user"):
+                    st.markdown(pedido)
+                with st.chat_message("assistant"):
+                    with st.spinner("Revisando el plan y aplicando cambios..."):
+                        try:
+                            respuesta_ia, acciones_ia = ia_asistente.ejecutar_turno_asistente(
+                                cliente_ia(), historial_ia, pedido,
+                                ia_asistente.definir_herramientas(pe.CAMPOS_CLIENTE, OPCIONES_HERRAMIENTAS),
+                                lambda nombre, entrada: ejecutar_herramienta_ia(nombre, entrada, estado_ia, calculos_ia),
+                            )
+                        except ia_asistente.ErrorIA as error_ia:
+                            respuesta_ia, acciones_ia = f"⚠️ {error_ia}", []
+            if estado_ia.pendientes:
+                st.session_state[pe.CLAVE_CAMBIOS] = dict(estado_ia.pendientes)
+            vista_chat.append({"rol": "assistant", "texto": respuesta_ia,
+                               "acciones": resumen_acciones(acciones_ia)})
+            st.rerun()

@@ -8,3 +8,6 @@ backup_progreso.json
 .venv/
 __pycache__/
 *.pyc
+
+# Claves privadas (ANTHROPIC_API_KEY)
+.streamlit/secrets.toml
